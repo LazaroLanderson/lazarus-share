@@ -6,6 +6,10 @@ on:
         description: Prepare missing VPS project directory (no container or TLS changes)
         type: boolean
         default: false
+      prepare_ip_tls:
+        description: Prepare a temporary self-signed IP certificate on VPS
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -22,6 +26,8 @@ jobs:
           VPS_PORT: ${{ vars.VPS_PORT }}
           VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH }}
           PREPARE_CHECKOUT: ${{ inputs.prepare_checkout }}
+          PREPARE_IP_TLS: ${{ inputs.prepare_ip_tls }}
+          SIGNAL_HOST: ${{ vars.SIGNAL_HOST }}
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
@@ -34,6 +40,11 @@ jobs:
           [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9/_.-]+$ ]]
           PREPARE_CHECKOUT=${PREPARE_CHECKOUT:-false}
           [[ "$PREPARE_CHECKOUT" == true || "$PREPARE_CHECKOUT" == false ]]
+          PREPARE_IP_TLS=${PREPARE_IP_TLS:-false}
+          [[ "$PREPARE_IP_TLS" == true || "$PREPARE_IP_TLS" == false ]]
+          SIGNAL_HOST=${SIGNAL_HOST:--}
+          if [[ "$PREPARE_IP_TLS" == true ]]; then [[ "$SIGNAL_HOST" =~ ^[0-9.]+$ ]]; fi
+          [[ "$SIGNAL_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
           [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
           umask 077
           mkdir -p "$RUNNER_TEMP/lazarus-ssh"
@@ -45,10 +56,13 @@ jobs:
           ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
-            "bash -s -- $VPS_DEPLOY_PATH $PREPARE_CHECKOUT" <<'REMOTE'
+            "bash -s -- $VPS_DEPLOY_PATH $PREPARE_CHECKOUT $PREPARE_IP_TLS $SIGNAL_HOST $GITHUB_SHA" <<'REMOTE'
           set -Eeuo pipefail
           checkout=$1
           prepare=$2
+          prepare_tls=$3
+          signal_host=$4
+          revision=$5
           if [[ "$prepare" == true ]]; then
             if [[ ! -d "$checkout/.git" ]]; then
               if [[ ! -d "$checkout" ]]; then
@@ -65,6 +79,14 @@ jobs:
             mkdir -p "$checkout/infra/certs/signal"
             chmod 700 "$checkout/infra/certs"
             echo 'Project checkout prepared; containers and certificates unchanged'
+          fi
+          if [[ "$prepare_tls" == true ]]; then
+            cd "$checkout"
+            [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo 'Tracked checkout has local changes'; exit 1; }
+            git fetch --no-tags origin main
+            git merge-base --is-ancestor "$revision" origin/main
+            git checkout --detach "$revision"
+            bash infra/bootstrap-ip.sh "$signal_host"
           fi
           . /etc/os-release
           printf 'System: %s\n' "$PRETTY_NAME"

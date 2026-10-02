@@ -28,7 +28,7 @@ jobs:
         run: |
           mkdir -p infra/certs/signal
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-            -subj /CN=localhost -addext subjectAltName=DNS:localhost \
+            -subj /CN=localhost -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
             -keyout infra/certs/signal/privkey.pem -out infra/certs/signal/fullchain.pem 2>/dev/null
           printf 'SIGNAL_IP=127.0.0.1\nSIGNAL_HOST=localhost\n' > infra/.env
           compose=(docker compose --project-name lazarus-ci --env-file infra/.env -f infra/compose.signaling.yml)
@@ -53,6 +53,7 @@ jobs:
           VPS_DEPLOY_MODE: ${{ vars.VPS_DEPLOY_MODE }}
           SIGNAL_HOST: ${{ vars.SIGNAL_HOST }}
           SIGNAL_IP: ${{ vars.SIGNAL_IP }}
+          SIGNAL_TLS_MODE: ${{ vars.SIGNAL_TLS_MODE }}
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
@@ -66,6 +67,8 @@ jobs:
           [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9/_.-]+$ ]]
           [[ "$VPS_DEPLOY_MODE" == full || "$VPS_DEPLOY_MODE" == signaling ]]
           SIGNAL_IP=${SIGNAL_IP:-0.0.0.0}
+          SIGNAL_TLS_MODE=${SIGNAL_TLS_MODE:-system}
+          [[ "$SIGNAL_TLS_MODE" == system || "$SIGNAL_TLS_MODE" == pinned ]]
           if [[ "$VPS_DEPLOY_MODE" == signaling ]]; then
             [[ "$SIGNAL_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo 'Set the SIGNAL_HOST variable to the rooms domain (no https://)'; exit 1; }
             [[ "$SIGNAL_IP" =~ ^[0-9.]+$ ]] || { echo 'SIGNAL_IP must be an IPv4 interface address'; exit 1; }
@@ -85,4 +88,4 @@ jobs:
           ssh -i "$key" -p "$VPS_PORT" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
             "$VPS_USER@$VPS_HOST" \
-            "bash -s -- $GITHUB_SHA $VPS_DEPLOY_PATH $VPS_DEPLOY_MODE $SIGNAL_HOST $SIGNAL_IP" < infra/deploy.sh
+            "bash -s -- $GITHUB_SHA $VPS_DEPLOY_PATH $VPS_DEPLOY_MODE $SIGNAL_HOST $SIGNAL_IP $SIGNAL_TLS_MODE" < infra/deploy.sh

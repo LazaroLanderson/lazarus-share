@@ -80,6 +80,21 @@ sys.exit(1 if fail else 0)
         self.assertEqual(env_file.read_text(), original)
         self.assertFalse((self.repo / '.deploy/events').exists())
 
+    def test_pinned_tls_uses_certificate_and_keeps_ip_hostname_verification(self):
+        cert = self.repo / 'infra/certs/signal/fullchain.pem'
+        cert.parent.mkdir(parents=True)
+        cert.write_text('test CA: curl is replaced by the isolated test harness\n')
+        command = ['bash', str(SCRIPT), self.new, str(self.repo), 'signaling', '127.0.0.1', '0.0.0.0', 'pinned']
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        events = [json.loads(line) for line in (self.repo / '.deploy/events').read_text().splitlines()]
+        args = next(args for name, _, args in events if name == 'curl')
+        self.assertIn('--cacert', args)
+        self.assertIn('infra/certs/signal/fullchain.pem', args)
+        self.assertIn('https://127.0.0.1/health', args)
+        self.assertNotIn('--insecure', args)
+        self.assertNotIn('-k', args)
+
     def test_success_records_revision_and_checks_tls(self):
         result = self.run_deploy()
         self.assertEqual(result.returncode, 0, result.stderr)

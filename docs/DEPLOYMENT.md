@@ -78,7 +78,9 @@ na `main` que afetam `server/`, `infra/` ou o próprio workflow:
    WebSocket com os containers reais e um certificado temporário no CI.
 3. Acesso SSH com chave e fingerprint do servidor verificada.
 4. Atualização para o commit exato que passou nos testes, construção na VPS,
-   inicialização com healthcheck e verificação HTTPS de `/health`.
+   inicialização com healthcheck e verificação HTTPS de `/health`. No modo
+   `signaling`, a conexão é local à VPS, preservando o hostname TLS; confirme
+   também o acesso externo para validar firewall e regras da hospedagem.
 5. Recuperação do commit anterior se a atualização dos containers ou o healthcheck
    falhar. Uma falha de construção preserva os containers em execução.
 
@@ -166,6 +168,7 @@ Em **Variables**, configure:
 | --- | --- |
 | `SIGNAL_HOST` | Domínio real das salas, como `salas.seudominio.com`, sem `https://` nem `/ws`; obrigatório no deploy automático `signaling` |
 | `SIGNAL_IP` | IP local de escuta; padrão `0.0.0.0` no modo `signaling` |
+| `SIGNAL_TLS_MODE` | `system` (padrão) para certificado público, ou `pinned` para o certificado temporário pelo IP |
 | `VPS_PORT` | Porta SSH; padrão `22` |
 | `VPS_DEPLOY_PATH` | Checkout na VPS; padrão `/opt/lazarus-share` |
 | `VPS_DEPLOY_MODE` | Padrão `signaling` para um IP; `full` para salas + TURN |
@@ -209,3 +212,31 @@ usar Certbot ou equivalente, copie os certificados renovados para os diretórios
 montados e recrie os containers que os utilizam; automatize esse procedimento
 no hook de renovação da ferramenta. Nenhum deploy solicita certificado nem
 altera DNS ou firewall automaticamente.
+
+## Teste temporário pelo IP, sem DNS
+
+O modo `signaling` também pode usar HTTPS pelo IP público. Configure as Variables
+`SIGNAL_HOST=IP_PUBLICO`, `SIGNAL_IP=0.0.0.0`, `SIGNAL_TLS_MODE=pinned` e
+`VPS_DEPLOY_MODE=signaling`. Mantenha `VPS_DEPLOY_ENABLED=false` até preparar
+checkout e certificado. Não use HTTP público sem TLS.
+
+Execute **Actions → Inspect VPS → Run workflow**, marcando `prepare_checkout`
+se necessário e `prepare_ip_tls`. Esse passo prepara um certificado autoassinado
+com SAN do IP, válido por 30 dias, e imprime somente a impressão SHA-256 e
+validade. A chave privada fica na VPS; arquivos existentes não são sobrescritos
+silenciosamente. O IP deve ser o endereço real da sua VPS.
+
+Depois habilite `VPS_DEPLOY_ENABLED=true` e execute **Deploy VPS**. O healthcheck
+confia explicitamente no certificado preparado e continua verificando o IP no
+SAN; não usa `--insecure`. Confirme TCP/443 no firewall e nas regras de ingresso
+do provedor. Não depende de DNS nem exige abrir porta 80 nesse modo.
+
+Nos dois apps configure `wss://IP_PUBLICO/ws` e preencha **Certificado local
+(SHA-256)** com a impressão obtida pelo canal SSH confiável. Compartilhe somente
+a impressão do certificado; a chave privada nunca vai para os clientes. Quando
+expirar ou for substituído, atualize a impressão nos clientes.
+
+Esse teste oferece salas/P2P; o relay continua desabilitado. Quando o domínio
+estiver pronto, prepare o certificado público e mude `SIGNAL_HOST` para o domínio
+real e `SIGNAL_TLS_MODE=system`. Retire o pin temporário dos clientes e use a nova
+URL de salas. Substituir certificados deve ser uma operação explícita.

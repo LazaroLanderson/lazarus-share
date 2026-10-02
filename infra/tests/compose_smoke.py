@@ -11,7 +11,10 @@ async def main():
         async with client.get('https://localhost/health', ssl=tls) as response:
             assert response.status == 200
             assert await response.json() == {'ok': True}
-        async with client.ws_connect('wss://localhost/ws', ssl=tls) as ws:
+        async with client.get('https://127.0.0.1/health', ssl=tls) as response:
+            assert response.status == 200
+            assert await response.json() == {'ok': True}
+        async with client.ws_connect('wss://127.0.0.1/ws', ssl=tls) as ws:
             await ws.send_json({'type': 'create', 'room': 'a' * 64, 'admin': 'b' * 64, 'challenge': 'c' * 32})
             result = await asyncio.wait_for(ws.receive_json(), 5)
             assert result['type'] == 'created'
