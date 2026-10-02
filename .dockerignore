@@ -1,0 +1,7 @@
+# Send only signaling build inputs; exclude local credentials, packages and caches.
+**
+!server/
+!server/service.py
+!server/requirements.txt
+!infra/
+!infra/Dockerfile

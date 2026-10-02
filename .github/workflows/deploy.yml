@@ -1,0 +1,77 @@
+name: Deploy VPS
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', 'infra/**', '.dockerignore', '.github/workflows/deploy.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vps-production
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r server/requirements.txt
+      - run: python -m unittest discover -s server/tests -v
+      - run: python -m unittest discover -s infra/tests -v
+      - run: |
+          bash -n infra/deploy.sh
+          docker compose --env-file infra/.env.example -f infra/compose.yml config --quiet
+          docker compose --env-file infra/.env.example -f infra/compose.signaling.yml config --quiet
+      - name: Test real signaling container and TLS WebSocket proxy
+        run: |
+          mkdir -p infra/certs/signal
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj /CN=localhost -addext subjectAltName=DNS:localhost \
+            -keyout infra/certs/signal/privkey.pem -out infra/certs/signal/fullchain.pem 2>/dev/null
+          printf 'SIGNAL_IP=127.0.0.1\nSIGNAL_HOST=localhost\n' > infra/.env
+          compose=(docker compose --project-name lazarus-ci --env-file infra/.env -f infra/compose.signaling.yml)
+          trap '"${compose[@]}" down' EXIT
+          "${compose[@]}" up -d --build --wait --wait-timeout 120
+          python infra/tests/compose_smoke.py
+  deploy:
+    needs: validate
+    # Enable only after the VPS, TLS, SSH key and known_hosts have been prepared.
+    if: vars.VPS_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy exact tested commit through verified SSH
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+          VPS_PORT: ${{ vars.VPS_PORT }}
+          VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH }}
+          VPS_DEPLOY_MODE: ${{ vars.VPS_DEPLOY_MODE }}
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          VPS_PORT=${VPS_PORT:-22}
+          VPS_DEPLOY_PATH=${VPS_DEPLOY_PATH:-/opt/lazarus-share}
+          VPS_DEPLOY_MODE=${VPS_DEPLOY_MODE:-full}
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9/_.-]+$ ]]
+          [[ "$VPS_DEPLOY_MODE" == full || "$VPS_DEPLOY_MODE" == signaling ]]
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
+          umask 077
+          mkdir -p "$RUNNER_TEMP/lazarus-ssh"
+          key="$RUNNER_TEMP/lazarus-ssh/key"
+          hosts="$RUNNER_TEMP/lazarus-ssh/known_hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
+          ssh -i "$key" -p "$VPS_PORT" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
+            "$VPS_USER@$VPS_HOST" \
+            "bash -s -- $GITHUB_SHA $VPS_DEPLOY_PATH $VPS_DEPLOY_MODE" < infra/deploy.sh

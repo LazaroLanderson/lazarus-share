@@ -72,3 +72,6 @@ gstreamer-registry*.bin
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Deployment state lives on the VPS
+/.deploy/

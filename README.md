@@ -289,7 +289,9 @@ em issues. Detalhes técnicos estão no [protocolo e limites de privacidade](doc
 ## Hospedar na internet
 
 A infraestrutura autohospedável inclui sinalização Python/aiohttp, Nginx com TLS
-e Coturn. Veja o [guia de implantação](docs/DEPLOYMENT.md) antes de publicar.
+e Coturn. O [guia de implantação](docs/DEPLOYMENT.md) inclui o modo de salas/P2P
+com um IP e o deploy automático por GitHub Actions, com teste HTTPS e rollback.
+A automação precisa dos dados e da chave SSH da VPS para ser habilitada.
 
 O exemplo exige domínios, certificados TLS válidos e endereços públicos separados
 para sinalização e TURN quando ambos usam TCP/443. Pode-se hospedar TURN em outra
