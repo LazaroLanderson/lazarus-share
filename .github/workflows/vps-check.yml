@@ -1,0 +1,56 @@
+name: Inspect VPS
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 3
+    steps:
+      - name: Check VPS prerequisites through verified SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          VPS_PORT: ${{ vars.VPS_PORT }}
+          VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH }}
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          VPS_PORT=${VPS_PORT:-22}
+          VPS_DEPLOY_PATH=${VPS_DEPLOY_PATH:-/opt/lazarus-share}
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+          [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9/_.-]+$ ]]
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
+          umask 077
+          mkdir -p "$RUNNER_TEMP/lazarus-ssh"
+          key="$RUNNER_TEMP/lazarus-ssh/key"
+          hosts="$RUNNER_TEMP/lazarus-ssh/known_hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
+          ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
+            "bash -s -- $VPS_DEPLOY_PATH" <<'REMOTE'
+          set -u
+          checkout=$1
+          . /etc/os-release
+          printf 'System: %s\n' "$PRETTY_NAME"
+          printf 'Architecture: %s\n' "$(uname -m)"
+          if command -v docker >/dev/null; then
+            docker compose version || true
+            if docker info >/dev/null 2>&1; then echo 'Docker engine access: yes'; else echo 'Docker engine access: no'; fi
+          else echo 'Docker installed: no'; fi
+          if command -v git >/dev/null; then echo 'Git installed: yes'; else echo 'Git installed: no'; fi
+          if [[ -d "$checkout/.git" ]]; then echo 'Project checkout: present'; else echo 'Project checkout: missing'; fi
+          if [[ -f "$checkout/infra/.env" ]]; then echo 'Environment file: present'; else echo 'Environment file: missing'; fi
+          if [[ -r "$checkout/infra/certs/signal/fullchain.pem" && -r "$checkout/infra/certs/signal/privkey.pem" ]]; then echo 'TLS files: readable'; else echo 'TLS files: missing or unreadable'; fi
+          if command -v ss >/dev/null; then
+            if [[ -n $(ss -H -ltn 'sport = :443') ]]; then echo 'TCP 443: occupied'; else echo 'TCP 443: available'; fi
+          else echo 'TCP 443: unknown (ss unavailable)'; fi
+          REMOTE
