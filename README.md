@@ -15,6 +15,19 @@ O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 > Windows. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
 
+## Downloads da versão experimental
+
+| Plataforma | Executável portátil |
+| --- | --- |
+| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.2/LazarusShare-x86_64.AppImage) |
+| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.2/LazarusShare.exe) |
+
+[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.1.2)
+· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.2/SHA256SUMS)
+
+Para testar, configure seu próprio servidor de salas conforme o guia abaixo.
+O pacote Windows ainda precisa de validação em uma máquina Windows.
+
 ## Índice
 
 - [Recursos](#recursos)
