@@ -158,6 +158,8 @@ jobs:
           if command -v tcpdump >/dev/null; then echo 'Packet counter available: yes'; else echo 'Packet counter available: no'; fi
           if [[ -r /sys/class/dmi/id/sys_vendor ]]; then printf 'Machine vendor: '; cat /sys/class/dmi/id/sys_vendor; fi
           if command -v oci >/dev/null; then echo 'Oracle CLI installed: yes'; else echo 'Oracle CLI installed: no'; fi
+          docker image inspect ghcr.io/oracle/oci-cli --format 'Oracle container runtime downloaded: yes' 2>/dev/null || echo 'Oracle container runtime downloaded: no'
+          docker ps --filter ancestor=ghcr.io/oracle/oci-cli --format 'Oracle API check runtime: {{.Status}}' || true
           if [[ -f ~/.oci/config ]]; then echo 'Oracle API configuration present: yes'; else echo 'Oracle API configuration present: no'; fi
           python3 - <<'PROVIDER'
           import json,urllib.request
