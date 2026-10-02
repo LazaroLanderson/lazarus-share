@@ -10,6 +10,10 @@ on:
         description: Prepare a temporary self-signed IP certificate on VPS
         type: boolean
         default: false
+      check_public_https:
+        description: Test public HTTPS from the GitHub runner after SSH inspection
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -28,6 +32,7 @@ jobs:
           PREPARE_CHECKOUT: ${{ inputs.prepare_checkout }}
           PREPARE_IP_TLS: ${{ inputs.prepare_ip_tls }}
           SIGNAL_HOST: ${{ vars.SIGNAL_HOST }}
+          CHECK_PUBLIC_HTTPS: ${{ inputs.check_public_https }}
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
@@ -53,10 +58,11 @@ jobs:
           trap 'rm -f "$key" "$hosts"' EXIT
           python3 infra/prepare_ssh.py "$key"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
+          status="$RUNNER_TEMP/lazarus-vps-status"
           ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
-            "bash -s -- $VPS_DEPLOY_PATH $PREPARE_CHECKOUT $PREPARE_IP_TLS $SIGNAL_HOST $GITHUB_SHA" <<'REMOTE'
+            "bash -s -- $VPS_DEPLOY_PATH $PREPARE_CHECKOUT $PREPARE_IP_TLS $SIGNAL_HOST $GITHUB_SHA" <<'REMOTE' | tee "$status"
           set -Eeuo pipefail
           checkout=$1
           prepare=$2
@@ -102,4 +108,31 @@ jobs:
           if command -v ss >/dev/null; then
             if [[ -n $(ss -H -ltn 'sport = :443') ]]; then echo 'TCP 443: occupied'; else echo 'TCP 443: available'; fi
           else echo 'TCP 443: unknown (ss unavailable)'; fi
+          if [[ -r "$checkout/infra/certs/signal/fullchain.pem" ]]; then
+            openssl x509 -in "$checkout/infra/certs/signal/fullchain.pem" -noout -fingerprint -sha256
+          fi
+          if command -v ufw >/dev/null; then sudo -n ufw status 2>/dev/null | head -n 1 || true; fi
+          for chain in DOCKER-USER FORWARD; do
+            rules=$(sudo -n iptables -S "$chain" 2>/dev/null || true)
+            count=$(printf '%s\n' "$rules" | grep -cE -- '-j (DROP|REJECT)' || true)
+            printf 'Restrictive %s rule count: %s\n' "$chain" "$count"
+          done
           REMOTE
+          if [[ "${CHECK_PUBLIC_HTTPS:-false}" == true ]]; then
+            python3 - "$status" <<'PYHTTPS'
+          import hashlib,json,os,re,socket,ssl,sys,urllib.request
+          from pathlib import Path
+          host=os.environ['SIGNAL_HOST']
+          matches=re.findall(r'sha256 Fingerprint=([0-9A-F:]{95})',Path(sys.argv[1]).read_text(),re.I)
+          if not matches: raise SystemExit('No certificate fingerprint obtained over verified SSH')
+          expected=matches[-1].replace(':','').lower()
+          with socket.create_connection((host,443),timeout=8) as plain:
+              with ssl._create_unverified_context().wrap_socket(plain,server_hostname=host) as channel:
+                  certificate=channel.getpeercert(binary_form=True)
+                  if hashlib.sha256(certificate).hexdigest()!=expected: raise SystemExit('Public certificate does not match VPS certificate')
+          context=ssl.create_default_context(cadata=ssl.DER_cert_to_PEM_cert(certificate))
+          with urllib.request.urlopen('https://'+host+'/health',context=context,timeout=8) as response:
+              assert json.load(response)=={'ok':True}
+          print('Public HTTPS passed from GitHub runner with verified certificate')
+          PYHTTPS
+          fi
