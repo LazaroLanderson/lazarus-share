@@ -1,0 +1,85 @@
+name: Publish tested release
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Build and verify run ID on main
+        required: true
+      version:
+        description: Release version without v (for example 0.1.3)
+        required: true
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source build
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/source-run.json"
+          python3 - <<'PY'
+          import base64,json,os,subprocess
+          from pathlib import Path
+          run=json.loads(Path(os.environ['RUNNER_TEMP']+'/source-run.json').read_text())
+          assert run['conclusion']=='success' and run['event']=='push' and run['head_branch']=='main'
+          assert run['path']=='.github/workflows/build.yml'
+          sha=run['head_sha']
+          raw=json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/contents/CMakeLists.txt?ref='+sha],text=True))
+          assert 'VERSION '+os.environ['VERSION']+' ' in base64.b64decode(raw['content']).decode()
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('sha='+sha+'\n')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          pattern: LazarusShare-*
+          path: release
+          merge-multiple: true
+      - name: Publish binaries and verified checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          cd release
+          test -s LazarusShare.exe
+          test -s LazarusShare-x86_64.AppImage
+          sha256sum LazarusShare.exe LazarusShare-x86_64.AppImage > SHA256SUMS
+          cat > notes.md <<EOF
+          Versão experimental $VERSION com HTTPS temporário pelo IP e confiança por impressão SHA-256 no cliente Windows.
+
+          - Pin correto aceito; pin substituído e SAN/IP incompatível recusados em testes reais do backend TLS Windows.
+          - Pacote Windows nativo com verificação de símbolos das DLLs e teste de abertura portátil.
+          - AppImage Linux e EXE Windows com bibliotecas incluídas.
+          - Deploy por IP com certificado temporário na VPS, sem depender de DNS. Relay continua dependendo de infraestrutura TURN própria.
+
+          [Build e validação dos dois pacotes](https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID).
+          Fonte: $SOURCE_SHA. Captura real entre PCs, outras GPUs e aceitação na Dtel continuam dependendo de testes em equipamentos reais.
+          EOF
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Lazarus Share $VERSION — experimental" --prerelease --draft --notes-file notes.md LazarusShare.exe LazarusShare-x86_64.AppImage SHA256SUMS
+          gh api "repos/$GITHUB_REPOSITORY/releases" > "$RUNNER_TEMP/releases.json"
+          python3 - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          releases=json.loads(Path(os.environ['RUNNER_TEMP']+'/releases.json').read_text())
+          release=next(r for r in releases if r['tag_name']=='v'+os.environ['VERSION'])
+          for name in ('LazarusShare.exe','LazarusShare-x86_64.AppImage','SHA256SUMS'):
+              asset=next(a for a in release['assets'] if a['name']==name)
+              assert asset['digest']=='sha256:'+hashlib.sha256(Path(name).read_bytes()).hexdigest(), name
+          PY
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false
