@@ -118,6 +118,12 @@ jobs:
             printf 'Restrictive %s rule count: %s\n' "$chain" "$count"
           done
           sudo -n iptables -S FORWARD 2>/dev/null | python3 -c 'import sys,shlex; [print("FORWARD order: "+" ".join(shlex.split(line))) for line in sys.stdin if "-j " in line and not any(c in line for c in (".", "/"))]' || true
+          echo 'Host firewall and Docker HTTPS forwarding:'
+          sudo -n iptables -S INPUT 2>/dev/null || true
+          sudo -n iptables -S DOCKER 2>/dev/null | grep -E -- '(^-N |--dport 443)' || true
+          sudo -n iptables -t nat -S DOCKER 2>/dev/null | grep -E -- '(^-N |--dport 443)' || true
+          if command -v tcpdump >/dev/null; then echo 'Packet counter available: yes'; else echo 'Packet counter available: no'; fi
+          if [[ -r /sys/class/dmi/id/sys_vendor ]]; then printf 'Machine vendor: '; cat /sys/class/dmi/id/sys_vendor; fi
           REMOTE
           if [[ "${CHECK_PUBLIC_HTTPS:-false}" == true ]]; then
             python3 - "$status" <<'PYHTTPS'
