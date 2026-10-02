@@ -61,10 +61,10 @@ nos testes automatizados.
 - A biblioteca libnice emitiu aviso de allocations TURN ainda em limpeza ao
   destruir os peers. As pipelines de mídia encerraram; a limpeza das allocations
   nessa combinação GStreamer/libnice ainda depende também do timeout do TURN.
-- Windows: fontes da aplicação e wrapper portátil compilados para x64, DLLs
-  reunidas e arquivo PE32+ gerado. Compilação cruzada usou headers/moc Qt 6.4 e
-  runtime Qt 6.11.2/MSYS2, GStreamer 1.28.7. Ainda não houve execução Windows;
-  a automação para compilação nativa está pronta, mas não foi rodada na nuvem.
+- Windows: o primeiro pacote foi compilado de forma cruzada e falhou no
+  carregador durante o teste do usuário. O substituto foi compilado nativamente
+  em Windows/MSYS2 e passou na verificação de símbolos e abertura portátil
+  no CI Windows Server 2022, conforme a seção de correção abaixo.
 
 Ainda pendentes: servidor público/domínios (a definir), captura X11 e transmissão real entre PCs
 Linux/Windows, captura e áudio reais no Windows 10/11, testes entre máquinas limpas,
@@ -130,8 +130,9 @@ Intel real. Com somente os plugins/bibliotecas do AppDir, recebeu 467 quadros
 em oito segundos (1080p/60 alvo), sem quadros corrompidos detectados. TURN UDP,
 TCP e TLS também receberam 90 quadros H.264 por teste. Os seis testes CTest e
 o teste LAN/TLS com quatro viewers passaram. AppImage abriu sem FUSE; o
-Windows passou pela verificação de dependências PE, incluindo OpenH264,
-NVENC e Quick Sync. Execução Windows e nova captura real permanecem pendentes.
+Windows original passou somente pela verificação dos nomes de dependências PE,
+que não detectou a incompatibilidade C++ encontrada depois. Captura real
+em Windows permanece pendente; o teste de abertura corrigido está descrito abaixo.
 
 ## Correção do pacote Windows — 2 de outubro de 2026
 
@@ -149,3 +150,9 @@ O CI executa o próprio pacote portátil com `--check-runtime` e `--smoke-test`,
 com o PATH sem as ferramentas de desenvolvimento. Esses testes incluem extração,
 carregamento das bibliotecas/plugins e abertura da janela. Captura, áudio e
 conexão entre PCs continuam dependendo dos testes em equipamentos reais.
+
+Resultado: [build bc3cead no GitHub Actions](https://github.com/LazaroLanderson/lazarus-share/actions/runs/37039599647)
+concluiu o job Windows com sucesso: teste de protocolo, verificação de imports/exports,
+`--check-runtime` e `--smoke-test` pelo EXE portátil. O runner usa Windows Server
+2022; isso valida o carregador, extração e abertura, mas não comprova captura/áudio
+em Windows 10/11 nem aceleração em GPUs físicas.

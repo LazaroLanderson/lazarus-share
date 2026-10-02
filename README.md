@@ -11,8 +11,8 @@ Sem contas, telemetria, anúncios, gravação ou histórico de salas no servidor
 O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
 > **Versão atual: 0.1.2, experimental.** O caminho Linux/Intel foi testado
-> localmente. Os pacotes Windows foram compilados, mas ainda não executados em
-> Windows. Testes reais entre PCs, outras GPUs e redes de operadora continuam
+> localmente. O EXE Windows foi recompilado nativamente e passou no teste de
+> abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
 
 ## Downloads da versão experimental
@@ -26,7 +26,9 @@ O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 · [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.2/SHA256SUMS)
 
 Para testar, configure seu próprio servidor de salas conforme o guia abaixo.
-O pacote Windows ainda precisa de validação em uma máquina Windows.
+O EXE Windows foi corrigido após uma falha de biblioteca C++ no primeiro pacote.
+Se você baixou antes dessa correção, baixe novamente. Captura e conexão em
+Windows 10/11 ainda precisam de testes em equipamentos reais.
 
 ## Índice
 
@@ -74,7 +76,7 @@ múltiplos hosts ou compartilhamento de vários monitores ao mesmo tempo.
 | Intel Iris Xe no Linux | H.264 por VA-API validado em testes locais |
 | NVIDIA NVENC | Detecção e caminho de codificação implementados; teste em NVIDIA pendente |
 | Intel Quick Sync no Windows | Detecção e caminho de codificação implementados; teste em hardware pendente |
-| Windows 10 22H2 e Windows 11 x64 | Alvos de suporte; pacote compilado, execução real pendente |
+| Windows 10 22H2 e Windows 11 x64 | Alvos de suporte; abertura portátil validada no CI Windows Server 2022; captura real pendente |
 | Áudio seletivo Linux | Isolamento validado com PipeWire privado; teste entre PCs pendente |
 | Áudio seletivo Windows | Implementado com detecção de capacidade; teste real pendente |
 | Rede Dtel e outra operadora | Teste de aceitação de 30 minutos pendente |
@@ -389,7 +391,9 @@ ctest --test-dir build --output-on-failure
 Esses testes usam sockets locais. Precisam de um ambiente que permita abrir
 conexões; um sandbox que bloqueie sockets impede sua execução. O portal tem
 um teste de resposta DBus sem seleção manual. No Windows, a automação executa
-o teste de protocolo; os testes completos de mídia foram validados no Linux.
+o teste de protocolo, verifica os símbolos das DLLs incluídas e inicia o EXE
+portátil com `--check-runtime` e `--smoke-test`, com PATH sem o ambiente de
+desenvolvimento. Os testes completos de mídia foram validados no Linux.
 
 Servidor e sessão completa com quatro viewers:
 
