@@ -249,6 +249,20 @@ A opção `check_public_https` testa a conexão a partir do GitHub com o certifi
 verificado por SSH. Também observa pacotes HTTPS durante 18 segundos, registrando
 somente contagens por interface, direção e flags, sem endereços ou conteúdo.
 
+Em uma VPS Oracle Cloud, **Actions → Oracle HTTPS access** usa a identidade da
+instância (Instance Principal) para consultar a VNIC principal, a sub-rede e as
+listas de segurança associadas. Requer um grupo dinâmico incluindo somente essa
+instância e políticas IAM que permitam consultar a rede e `SECURITY_LIST_UPDATE`
+no compartimento da rede. Não requer chave de API nem novos secrets GitHub.
+
+Sem marcar `apply`, o workflow apenas consulta. Com `apply`, adiciona uma única
+regra de entrada pública IPv4, TCP/443, stateful, à lista padrão da VCN somente
+se ela estiver associada à sub-rede e ainda não houver acesso equivalente.
+Preserva as entradas e saídas existentes, usa ETag para evitar sobrescrever uma
+alteração concorrente e verifica o resultado. O IP público da VNIC deve coincidir
+com `SIGNAL_HOST`. A ferramenta oficial Oracle é fixada por digest e executada
+temporariamente via Docker; credenciais e OCIDs não são impressos nos logs.
+
 Nos dois apps configure `wss://IP_PUBLICO/ws` e preencha **Certificado local
 (SHA-256)** com a impressão obtida pelo canal SSH confiável. Compartilhe somente
 a impressão do certificado; a chave privada nunca vai para os clientes. Quando
