@@ -71,7 +71,22 @@ jobs:
           [Build e validação dos dois pacotes](https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID).
           Fonte: $SOURCE_SHA. Captura real entre PCs, outras GPUs e aceitação na Dtel continuam dependendo de testes em equipamentos reais.
           EOF
-          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Lazarus Share $VERSION — experimental" --prerelease --draft --notes-file notes.md LazarusShare.exe LazarusShare-x86_64.AppImage SHA256SUMS
+          gh api "repos/$GITHUB_REPOSITORY/releases" > "$RUNNER_TEMP/existing-releases.json"
+          state=$(python3 - <<'PYEXIST'
+          import os,json
+          from pathlib import Path
+          releases=json.loads(Path(os.environ['RUNNER_TEMP']+'/existing-releases.json').read_text())
+          release=next((r for r in releases if r['tag_name']=='v'+os.environ['VERSION']),None)
+          print('missing' if release is None else 'draft' if release['draft'] else 'published')
+          PYEXIST
+          )
+          if [[ "$state" == missing ]]; then
+            gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "Lazarus Share $VERSION — experimental" --prerelease --draft --notes-file notes.md
+          elif [[ "$state" != draft ]]; then
+            echo 'Refusing to overwrite a published release'; exit 1
+          fi
+          gh release upload "v$VERSION" --repo "$GITHUB_REPOSITORY" --clobber LazarusShare.exe LazarusShare-x86_64.AppImage SHA256SUMS
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
           gh api "repos/$GITHUB_REPOSITORY/releases" > "$RUNNER_TEMP/releases.json"
           python3 - <<'PY'
           import hashlib,json,os
