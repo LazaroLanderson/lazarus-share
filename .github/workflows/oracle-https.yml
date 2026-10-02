@@ -1,0 +1,48 @@
+name: Oracle HTTPS access
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Add only stateful TCP 443 to the attached default security list
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  oracle:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test instance principal and optionally allow HTTPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST || vars.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
+          VPS_PORT: ${{ vars.VPS_PORT }}
+          SIGNAL_HOST: ${{ vars.SIGNAL_HOST }}
+          APPLY: ${{ inputs.apply }}
+          SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          VPS_PORT=${VPS_PORT:-22}
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+          [[ "$SIGNAL_HOST" =~ ^[0-9.]+$ ]]
+          [[ "$APPLY" == true || "$APPLY" == false ]]
+          umask 077
+          mkdir -p "$RUNNER_TEMP/lazarus-ssh"
+          key="$RUNNER_TEMP/lazarus-ssh/key"
+          hosts="$RUNNER_TEMP/lazarus-ssh/known_hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          python3 infra/prepare_ssh.py "$key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
+          option=''
+          if [[ "$APPLY" == true ]]; then option=--apply; fi
+          ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
+            "docker run --rm --network host -i --entrypoint python3 ghcr.io/oracle/oci-cli - --public-ip $SIGNAL_HOST $option" \
+            < infra/oracle_https.py
