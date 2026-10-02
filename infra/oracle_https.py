@@ -39,6 +39,7 @@ def main():
     args = parser.parse_args()
     import oci
 
+    operation = 'authenticate'
     try:
         vnics = metadata('vnics/')
         primary = [item for item in vnics if item.get('nicIndex', 0) == 0]
@@ -46,10 +47,13 @@ def main():
             raise RuntimeError('Cannot identify a unique primary VNIC; no changes made')
         signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
         client = oci.core.VirtualNetworkClient({}, signer=signer, timeout=(10, 30))
+        operation = 'GetVnic'
         vnic = client.get_vnic(primary[0]['vnicId']).data
         if vnic.public_ip != args.public_ip:
             raise RuntimeError('Primary VNIC public IP does not match the configured server; no changes made')
+        operation = 'GetSubnet'
         subnet = client.get_subnet(vnic.subnet_id).data
+        operation = 'GetSecurityList'
         lists = {identifier: client.get_security_list(identifier)
                  for identifier in subnet.security_list_ids}
         print('Instance principal authorized: attached VNIC, subnet and security lists readable')
@@ -60,6 +64,7 @@ def main():
         print('Existing public stateful TCP 443 rule:', allowed)
         if allowed or not args.apply:
             return
+        operation = 'GetVcn'
         vcn = client.get_vcn(subnet.vcn_id).data
         target = vcn.default_security_list_id
         if target not in lists:
@@ -79,7 +84,9 @@ def main():
             ingress_security_rules=[*original.ingress_security_rules, new_rule],
             egress_security_rules=original.egress_security_rules,
         )
+        operation = 'UpdateSecurityList'
         client.update_security_list(target, details, if_match=etag)
+        operation = 'VerifySecurityList'
         updated = client.get_security_list(target).data
         old_ingress = oci.util.to_dict(original.ingress_security_rules)
         old_egress = oci.util.to_dict(original.egress_security_rules)
@@ -89,7 +96,7 @@ def main():
             raise RuntimeError('Post-update rules differ from the expected preserved rules; inspect concurrent changes')
         print('Added only stateful public TCP 443; existing ingress and egress rules verified unchanged')
     except oci.exceptions.ServiceError as error:
-        print(f'Oracle API denied/failed: status={error.status} code={error.code}; credentials and identifiers omitted', file=sys.stderr)
+        print(f'Oracle API denied/failed: operation={operation} status={error.status} code={error.code}; credentials and identifiers omitted', file=sys.stderr)
         raise SystemExit(1)
     except Exception as error:
         # Authentication errors can contain request details; never print their body.

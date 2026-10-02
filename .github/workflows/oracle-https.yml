@@ -44,5 +44,5 @@ jobs:
           ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
-            "docker run --rm --network host -i --entrypoint python3 ghcr.io/oracle/oci-cli - --public-ip $SIGNAL_HOST $option" \
+            "docker run --rm --network host -i --entrypoint python3 ghcr.io/oracle/oci-cli@sha256:fb73376f3ab324ea17e4b04b2dd00da9b559203f766169ccae034ea07c140fb3 - --public-ip $SIGNAL_HOST $option" \
             < infra/oracle_https.py
