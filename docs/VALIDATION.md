@@ -132,3 +132,20 @@ TCP e TLS também receberam 90 quadros H.264 por teste. Os seis testes CTest e
 o teste LAN/TLS com quatro viewers passaram. AppImage abriu sem FUSE; o
 Windows passou pela verificação de dependências PE, incluindo OpenH264,
 NVENC e Quick Sync. Execução Windows e nova captura real permanecem pendentes.
+
+## Correção do pacote Windows — 2 de outubro de 2026
+
+O primeiro teste em Windows encontrou uma falha do carregador antes da janela:
+`_ZSt21ios_base_library_initv` ausente em `libstdc++-6.dll`. O build cruzado
+com GCC 13 exigia esse símbolo, mas a DLL distribuída pelo outro ambiente
+não o exportava. A verificação dos nomes de DLLs não detectava essa incompatibilidade.
+
+O empacotamento agora compara os símbolos importados de todos os executáveis
+e plugins com as exportações das DLLs incluídas. Essa verificação reproduziu
+a falha no pacote original. O executável distribuído deve vir do build nativo
+Windows/MSYS2, com compilador, Qt e GStreamer do mesmo ambiente.
+
+O CI executa o próprio pacote portátil com `--check-runtime` e `--smoke-test`,
+com o PATH sem as ferramentas de desenvolvimento. Esses testes incluem extração,
+carregamento das bibliotecas/plugins e abertura da janela. Captura, áudio e
+conexão entre PCs continuam dependendo dos testes em equipamentos reais.

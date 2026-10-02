@@ -24,7 +24,7 @@ static DWORD run(std::wstring command, const std::wstring &directory, bool hidde
     DWORD code = 1; GetExitCodeProcess(process.hProcess, &code);
     CloseHandle(process.hThread); CloseHandle(process.hProcess); return code;
 }
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
     wchar_t tmp[32768]; if (!GetTempPathW(32768, tmp)) return 1;
     unsigned char random[16];
     if (BCryptGenRandom(nullptr, random, sizeof(random), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return 1;
@@ -55,6 +55,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     SetEnvironmentVariableW(L"GST_PLUGIN_PATH_1_0", (appdir + L"\\gstreamer-1.0").c_str());
     if (std::filesystem::exists(appdir + L"\\gst-plugin-scanner.exe")) SetEnvironmentVariableW(L"GST_PLUGIN_SCANNER_1_0", (appdir + L"\\gst-plugin-scanner.exe").c_str());
     SetEnvironmentVariableW(L"GST_DEBUG", L"0");
-    DWORD result = run(L"\"" + appdir + L"\\lazarus-share.exe\"", appdir, false);
+    DWORD result = run(L"\"" + appdir + L"\\lazarus-share.exe\" " + arguments, appdir, false);
     cleanup(); return int(result);
 }

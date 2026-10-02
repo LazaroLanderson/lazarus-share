@@ -15,7 +15,7 @@ jobs:
           qt6-base-dev qt6-websockets-dev qt6-wayland qt6-qpa-plugins libgstreamer1.0-dev
           libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libpipewire-0.3-dev
           gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
-          gstreamer1.0-nice gstreamer1.0-pipewire gstreamer1.0-pulseaudio coturn pipewire-bin wireplumber
+          gstreamer1.0-tools gstreamer1.0-nice gstreamer1.0-pipewire gstreamer1.0-pulseaudio coturn pipewire-bin wireplumber
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
       - run: ctest --test-dir build --output-on-failure
         env:
@@ -59,6 +59,18 @@ jobs:
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
       - run: ctest --test-dir build -R protocol --output-on-failure
       - run: python packaging/windows/bundle.py
+      - name: Test portable Windows startup without development runtime
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          foreach ($argument in @("--check-runtime", "--smoke-test")) {
+            $process = Start-Process -FilePath "$PWD/dist/LazarusShare.exe" -ArgumentList $argument -PassThru
+            if (!$process.WaitForExit(120000)) {
+              taskkill /PID $process.Id /T /F
+              throw "Portable app startup timed out: $argument"
+            }
+            if ($process.ExitCode -ne 0) { throw "Portable app failed: $argument ($($process.ExitCode))" }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: LazarusShare-Windows

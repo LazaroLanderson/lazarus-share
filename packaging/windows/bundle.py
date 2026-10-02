@@ -7,6 +7,7 @@ import subprocess
 import zipfile
 import os
 import sys
+from verify_dependencies import verify
 
 p = argparse.ArgumentParser()
 p.add_argument("--prefix", default=str(Path(sys.executable).resolve().parents[1]))
@@ -42,7 +43,7 @@ while queue:
     seen.add(item)
     output = subprocess.check_output([tool("objdump"), "-p", str(item)], text=True)
     for dll in re.findall(r"DLL Name:\s*(\S+)", output):
-        system = {"kernel32.dll", "user32.dll", "gdi32.dll", "advapi32.dll", "shell32.dll", "ole32.dll", "oleaut32.dll", "ws2_32.dll", "winmm.dll", "msvcrt.dll", "ntdll.dll", "bcrypt.dll", "crypt32.dll", "secur32.dll", "dnsapi.dll", "iphlpapi.dll", "psapi.dll", "d3d11.dll", "dxgi.dll", "d3dcompiler_47.dll", "dwmapi.dll", "shlwapi.dll", "setupapi.dll", "imm32.dll", "uxtheme.dll", "version.dll", "normaliz.dll", "netapi32.dll", "mpr.dll", "comdlg32.dll", "winspool.drv", "opengl32.dll", "dwrite.dll", "d2d1.dll", "dhcpcsvc.dll", "mfplat.dll", "mf.dll", "mfuuid.dll", "propsys.dll", "winhttp.dll", "wtsapi32.dll", "userenv.dll", "cfgmgr32.dll", "hid.dll", "powrprof.dll", "dcomp.dll", "ucrtbase.dll", "msvcp_win.dll", "win32u.dll", "dbghelp.dll", "combase.dll", "wintrust.dll", "cryptbase.dll", "ncrypt.dll", "d3d12.dll", "dxcore.dll", "glu32.dll", "msimg32.dll", "mswsock.dll", "msasn1.dll", "shcore.dll", "usp10.dll", "mscms.dll", "faultrep.dll", "dinput8.dll", "ddraw.dll", "avrt.dll", "mfreadwrite.dll", "ksuser.dll", "cabinet.dll", "mmdevapi.dll", "rpcrt4.dll", "wsock32.dll", "wininet.dll", "msvfw32.dll", "vfw32.dll", "authz.dll"}
+        system = {"kernel32.dll", "user32.dll", "gdi32.dll", "advapi32.dll", "shell32.dll", "ole32.dll", "oleaut32.dll", "ws2_32.dll", "winmm.dll", "msvcrt.dll", "ntdll.dll", "bcrypt.dll", "crypt32.dll", "secur32.dll", "dnsapi.dll", "iphlpapi.dll", "psapi.dll", "d3d9.dll", "d3d11.dll", "dxgi.dll", "d3dcompiler_47.dll", "dwmapi.dll", "shlwapi.dll", "setupapi.dll", "imm32.dll", "uxtheme.dll", "version.dll", "normaliz.dll", "netapi32.dll", "mpr.dll", "comdlg32.dll", "winspool.drv", "opengl32.dll", "dwrite.dll", "d2d1.dll", "dhcpcsvc.dll", "mfplat.dll", "mf.dll", "mfuuid.dll", "propsys.dll", "winhttp.dll", "wtsapi32.dll", "userenv.dll", "cfgmgr32.dll", "hid.dll", "powrprof.dll", "dcomp.dll", "ucrtbase.dll", "msvcp_win.dll", "win32u.dll", "dbghelp.dll", "combase.dll", "wintrust.dll", "cryptbase.dll", "ncrypt.dll", "d3d12.dll", "dxcore.dll", "glu32.dll", "msimg32.dll", "mswsock.dll", "msasn1.dll", "shcore.dll", "usp10.dll", "mscms.dll", "faultrep.dll", "dinput8.dll", "ddraw.dll", "avrt.dll", "mfreadwrite.dll", "ksuser.dll", "cabinet.dll", "mmdevapi.dll", "rpcrt4.dll", "wsock32.dll", "wininet.dll", "msvfw32.dll", "vfw32.dll", "authz.dll"}
         if dll.lower() in system or dll.lower().startswith(("api-ms-", "ext-ms-")): continue
         source = prefix / "bin" / dll
         if source.exists() and not (app / dll).exists():
@@ -53,6 +54,7 @@ while queue:
             if dll.lower() not in system and not dll.lower().startswith(("api-ms-", "ext-ms-")):
                 missing.add(dll)
 if missing: raise SystemExit("Missing non-system DLLs: " + ", ".join(sorted(missing)))
+verify(app, tool("objdump"), system)
 shutil.copy2(repo / "LICENSE", app / "LICENSE")
 shutil.copytree(repo / "docs/licenses", app / "licenses", dirs_exist_ok=True)
 # MSYS2's runtime packages provide dependency notices in share/licenses.
