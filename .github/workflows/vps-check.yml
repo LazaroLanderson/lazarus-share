@@ -149,6 +149,12 @@ jobs:
           sudo -n iptables -S INPUT 2>/dev/null || true
           sudo -n iptables -S DOCKER 2>/dev/null | grep -E -- '(^-N |--dport 443)' || true
           sudo -n iptables -t nat -S DOCKER 2>/dev/null | grep -E -- '(^-N |--dport 443)' || true
+          for chain in DOCKER-USER DOCKER-FORWARD DOCKER-BRIDGE DOCKER-CT; do
+            sudo -n iptables -S "$chain" 2>/dev/null || true
+          done
+          ip rule show
+          ip route show
+          sudo -n nft list tables 2>/dev/null || true
           if command -v tcpdump >/dev/null; then echo 'Packet counter available: yes'; else echo 'Packet counter available: no'; fi
           if [[ -r /sys/class/dmi/id/sys_vendor ]]; then printf 'Machine vendor: '; cat /sys/class/dmi/id/sys_vendor; fi
           REMOTE
@@ -157,7 +163,11 @@ jobs:
             ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
               -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
-              "sudo -n timeout 18 tcpdump -nn -l -i any 'tcp dst port 443 and tcp[tcpflags] & tcp-syn != 0' 2>/dev/null | wc -l" > "$packet_count" &
+              "bash -s" > "$packet_count" <<'OBSERVER' &
+          sudo -n timeout 18 tcpdump -nn -l -i any 'tcp port 443' | python3 -u -c 'import sys,re,collections; counts=collections.Counter(); [(counts.update([m.groups()]) if (m:=re.search(r"(\S+) (In|Out) IP .*?Flags \[([^]]*)\]",line)) else None) for line in sys.stdin]; [print("Interface=%s direction=%s flags=%s count=%s"%(*key,count)) for key,count in sorted(counts.items())]'
+          result=${PIPESTATUS[0]}
+          [[ "$result" == 0 || "$result" == 124 ]]
+          OBSERVER
             observer=$!
             sleep 3
             public_result=0
@@ -177,7 +187,11 @@ jobs:
               assert json.load(response)=={'ok':True}
           print('Public HTTPS passed from GitHub runner with verified certificate')
           PYHTTPS
-            wait "$observer" || true
-            printf 'Inbound HTTPS SYN observations during public probe: %s\n' "$(cat "$packet_count")"
+            if wait "$observer"; then
+              echo 'HTTPS packet observations during public probe (addresses excluded):'
+              cat "$packet_count"
+            else
+              echo 'Packet observer failed; no conclusion about inbound packet arrival'
+            fi
             exit "$public_result"
           fi
