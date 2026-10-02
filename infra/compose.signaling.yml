@@ -22,7 +22,7 @@ services:
   proxy:
     image: nginx:1.28-alpine
     ports:
-      - "${SIGNAL_IP:?set SIGNAL_IP}:443:443"
+      - "${SIGNAL_IP:-0.0.0.0}:443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs/signal:/certs:ro

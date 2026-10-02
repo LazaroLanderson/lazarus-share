@@ -41,8 +41,9 @@ não colocar réplicas sem um projeto adicional de coordenação.
 
 Use `infra/compose.signaling.yml` para começar com HTTPS e sinalização, sem relay.
 A captura e mídia continuam nos PCs; a VPS coordena as salas. Configure
-`SIGNAL_IP` com o IP atribuído à VPS e `SIGNAL_HOST` com o domínio das salas,
-por exemplo `salas.seudominio.com`. Crie o registro DNS A apontando para esse IP
+`SIGNAL_IP=0.0.0.0` para escutar nas interfaces da VPS, ou com um IP atribuído
+à máquina quando quiser limitar a interface. Configure `SIGNAL_HOST` com o domínio das salas,
+por exemplo `salas.seudominio.com`. Crie o registro DNS A apontando para o IP público real da VPS
 (e AAAA somente se IPv6 também estiver configurado). Os campos TURN do exemplo
 não são usados nesse modo.
 
@@ -134,23 +135,39 @@ No repositório, abra **Settings → Environments**, crie o ambiente `production
 e limite os deploys à branch `main`. Se desejar deploy completamente automático,
 não configure aprovação manual nesse ambiente.
 
-Em **Settings → Secrets and variables → Actions → Variables**, configure:
-
-| Variável | Valor |
-| --- | --- |
-| `VPS_HOST` | IP ou hostname da VPS, acessível por SSH |
-| `VPS_USER` | Usuário de deploy |
-| `VPS_PORT` | Porta SSH; padrão `22` |
-| `VPS_DEPLOY_PATH` | Checkout na VPS; padrão `/opt/lazarus-share` |
-| `VPS_DEPLOY_MODE` | `signaling` para um IP; `full` para salas + TURN |
-| `VPS_DEPLOY_ENABLED` | `true`, somente depois do primeiro deploy manual bem-sucedido |
-
-Nos secrets do ambiente `production`, configure:
+Em **Settings → Secrets and variables → Actions → Secrets**, configure os
+secrets de repositório (os nomes abaixo correspondem às credenciais criadas):
 
 | Secret | Conteúdo |
 | --- | --- |
-| `VPS_SSH_PRIVATE_KEY` | Chave privada exclusiva do deploy, sem passphrase |
-| `VPS_SSH_KNOWN_HOSTS` | Entrada SSH `known_hosts` da VPS, verificada por um canal confiável |
+| `VPS_HOST` | IP público ou hostname da VPS acessível por SSH |
+| `VPS_USER` | Usuário de deploy na VPS |
+| `VPS_SSH_KEY` | Chave privada exclusiva do deploy, sem passphrase |
+| `VPS_SSH_KNOWN_HOSTS` | Entrada SSH `known_hosts` da VPS verificada por um canal confiável |
+
+`VPS_HOST` não é um endereço automaticamente configurado no app: é o destino
+SSH do deploy. DNS, `SIGNAL_HOST` e certificados são configurados na VPS.
+No modo `signaling`, `SIGNAL_IP` ausente ou vazio usa `0.0.0.0`, que permite
+escutar nas interfaces locais sem tentar vincular um IP público que pode estar
+atrás de NAT. `0.0.0.0` é endereço de escuta, não endereço para digitar no app
+nem para usar no DNS. Ao copiar `.env.example`, substitua o IP de exemplo por
+`0.0.0.0` nesse modo, ou pelo IP local realmente atribuído. Para o modo `full`,
+configure explicitamente os dois IPs distintos.
+
+Em **Variables**, configure:
+
+| Variável | Valor |
+| --- | --- |
+| `VPS_PORT` | Porta SSH; padrão `22` |
+| `VPS_DEPLOY_PATH` | Checkout na VPS; padrão `/opt/lazarus-share` |
+| `VPS_DEPLOY_MODE` | Padrão `signaling` para um IP; `full` para salas + TURN |
+| `VPS_DEPLOY_ENABLED` | `true`, somente depois do primeiro deploy manual bem-sucedido |
+
+Os secrets também podem ser definidos no ambiente `production`; secrets do
+repositório ficam disponíveis ao job, desde que não sejam sobrescritos por
+secrets desse ambiente. Para compatibilidade, o workflow ainda aceita host e
+usuário em Variables e a chave com o nome antigo `VPS_SSH_PRIVATE_KEY`, mas
+prioriza os secrets `VPS_HOST`, `VPS_USER` e `VPS_SSH_KEY`.
 
 Obtenha o fingerprint SSH pela console da VPS ou pelo provedor e compare com a
 chave recebida antes de salvar `known_hosts`. Para portas diferentes de 22, a
