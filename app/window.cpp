@@ -1,4 +1,5 @@
 #include "window.h"
+#include "tls.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QFileDialog>
@@ -98,10 +99,8 @@ Window::Window() : capture_(this), audio_(this) {
         if (pin.size() != 64 || socket_.sslConfiguration().peerCertificate().digest(QCryptographicHash::Sha256).toHex() != pin.toLatin1()) {
             notice("Certificado TLS não confiável. Para o servidor local, copie sua impressão SHA-256."); return;
         }
-        for (const auto &error : errors) {
-            if (error.error() != QSslError::SelfSignedCertificate && error.error() != QSslError::SelfSignedCertificateInChain) {
-                notice("Certificado local recusado: " + error.errorString()); return;
-            }
+        if (!acceptsPinnedTls(socket_.sslConfiguration().peerCertificate(), errors, pin)) {
+            notice("Certificado local recusado: erro TLS além da confiança no certificado."); return;
         }
         socket_.ignoreSslErrors(errors);
     });
@@ -329,7 +328,7 @@ void Window::selectAudio() {
 void Window::diagnostics() {
     QJsonArray connections;
     for (auto &[id, c] : peers_) connections.append(QJsonObject{{"route", c->route}, {"metrics", c->metrics}, {"relay_local", c->localConsent}, {"relay_remote", c->remoteConsent}, {"failed", c->failed}});
-    QJsonObject report{{"version", "0.1.2"}, {"role", host_ ? "host" : "viewer"}, {"connections", connections},
+    QJsonObject report{{"version", "0.1.3"}, {"role", host_ ? "host" : "viewer"}, {"connections", connections},
         {"target_width", width_->value()}, {"target_height", height_->value()}, {"target_fps", fps_->value()}, {"target_kbps", bitrate_->value()}, {"audio_selective_available", audio_.supported()}};
     auto path = QFileDialog::getSaveFileName(this, "Exportar diagnóstico sem segredos", "diagnostico.json", "JSON (*.json)");
     if (path.isEmpty()) return; QFile file(path);

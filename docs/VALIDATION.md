@@ -156,3 +156,17 @@ concluiu o job Windows com sucesso: teste de protocolo, verificação de imports
 `--check-runtime` e `--smoke-test` pelo EXE portátil. O runner usa Windows Server
 2022; isso valida o carregador, extração e abertura, mas não comprova captura/áudio
 em Windows 10/11 nem aceleração em GPUs físicas.
+
+## HTTPS temporário pelo IP — 0.1.3
+
+O deploy por IP usa certificado autoassinado com SAN IPv4 e o healthcheck confia
+explicitamente nesse certificado, sem desativar verificação TLS. O cliente
+Windows/Schannel pode apresentar `CertificateUntrusted` para essa raiz; o pin
+passa a aceitar esse erro somente para um certificado autoassinado cujo SHA-256
+corresponde exatamente ao valor configurado. Mismatch de hostname/IP, expiração,
+revogação e pin incorreto continuam recusados.
+
+O teste de política reproduziu a rejeição anterior e passou depois do ajuste.
+O teste de conexão TLS real verifica um servidor por IP com o backend nativo Qt,
+pin correto, pin substituído e SAN incompatível; o job Windows executa esse teste
+antes de empacotar.
