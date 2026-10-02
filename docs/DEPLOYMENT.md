@@ -231,6 +231,24 @@ confia explicitamente no certificado preparado e continua verificando o IP no
 SAN; não usa `--insecure`. Confirme TCP/443 no firewall e nas regras de ingresso
 do provedor. Não depende de DNS nem exige abrir porta 80 nesse modo.
 
+Se houver uma rejeição no firewall do Linux, **Inspect VPS** tem a opção explícita
+`open_host_https`. Ela adiciona somente uma regra de entrada TCP/443 com o
+comentário `lazarus-share-https` e instala a unidade
+`lazarus-share-https-firewall.service` para reaplicá-la ao reiniciar. Não limpa
+regras existentes, não altera portas de SSH/TeamSpeak e não libera o firewall
+do provedor. Para desfazer essa liberação específica:
+
+```bash
+sudo systemctl disable --now lazarus-share-https-firewall.service
+sudo iptables -w 5 -D INPUT -p tcp --dport 443 -m comment --comment lazarus-share-https -j ACCEPT
+sudo rm /etc/systemd/system/lazarus-share-https-firewall.service
+sudo systemctl daemon-reload
+```
+
+A opção `check_public_https` testa a conexão a partir do GitHub com o certificado
+verificado por SSH. Também observa pacotes HTTPS durante 18 segundos, registrando
+somente contagens por interface, direção e flags, sem endereços ou conteúdo.
+
 Nos dois apps configure `wss://IP_PUBLICO/ws` e preencha **Certificado local
 (SHA-256)** com a impressão obtida pelo canal SSH confiável. Compartilhe somente
 a impressão do certificado; a chave privada nunca vai para os clientes. Quando

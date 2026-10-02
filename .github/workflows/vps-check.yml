@@ -157,6 +157,19 @@ jobs:
           sudo -n nft list tables 2>/dev/null || true
           if command -v tcpdump >/dev/null; then echo 'Packet counter available: yes'; else echo 'Packet counter available: no'; fi
           if [[ -r /sys/class/dmi/id/sys_vendor ]]; then printf 'Machine vendor: '; cat /sys/class/dmi/id/sys_vendor; fi
+          if command -v oci >/dev/null; then echo 'Oracle CLI installed: yes'; else echo 'Oracle CLI installed: no'; fi
+          if [[ -f ~/.oci/config ]]; then echo 'Oracle API configuration present: yes'; else echo 'Oracle API configuration present: no'; fi
+          python3 - <<'PROVIDER'
+          import json,urllib.request
+          request=urllib.request.Request('http://169.254.169.254/opc/v2/instance/',headers={'Authorization':'Bearer Oracle'})
+          try:
+              opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              with opener.open(request,timeout=2) as response: instance=json.load(response)
+              if str(instance.get('id','')).startswith('ocid1.instance.'):
+                  print('Cloud provider confirmed by instance metadata: Oracle Cloud')
+              else: print('Cloud provider metadata: unrecognized')
+          except Exception: print('Cloud provider metadata: unavailable')
+          PROVIDER
           REMOTE
           if [[ "${CHECK_PUBLIC_HTTPS:-false}" == true ]]; then
             packet_count="$RUNNER_TEMP/lazarus-https-syn-count"
