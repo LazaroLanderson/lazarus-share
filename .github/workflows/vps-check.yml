@@ -14,6 +14,10 @@ on:
         description: Test public HTTPS from the GitHub runner after SSH inspection
         type: boolean
         default: false
+      open_host_https:
+        description: Allow only TCP 443 in the VPS host firewall and persist that rule
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -33,6 +37,7 @@ jobs:
           PREPARE_IP_TLS: ${{ inputs.prepare_ip_tls }}
           SIGNAL_HOST: ${{ vars.SIGNAL_HOST }}
           CHECK_PUBLIC_HTTPS: ${{ inputs.check_public_https }}
+          OPEN_HOST_HTTPS: ${{ inputs.open_host_https }}
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
@@ -50,6 +55,8 @@ jobs:
           SIGNAL_HOST=${SIGNAL_HOST:--}
           if [[ "$PREPARE_IP_TLS" == true ]]; then [[ "$SIGNAL_HOST" =~ ^[0-9.]+$ ]]; fi
           [[ "$SIGNAL_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          OPEN_HOST_HTTPS=${OPEN_HOST_HTTPS:-false}
+          [[ "$OPEN_HOST_HTTPS" == true || "$OPEN_HOST_HTTPS" == false ]]
           [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
           umask 077
           mkdir -p "$RUNNER_TEMP/lazarus-ssh"
@@ -62,13 +69,33 @@ jobs:
           ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
-            "bash -s -- $VPS_DEPLOY_PATH $PREPARE_CHECKOUT $PREPARE_IP_TLS $SIGNAL_HOST $GITHUB_SHA" <<'REMOTE' | tee "$status"
+            "bash -s -- $VPS_DEPLOY_PATH $PREPARE_CHECKOUT $PREPARE_IP_TLS $SIGNAL_HOST $GITHUB_SHA $OPEN_HOST_HTTPS" <<'REMOTE' | tee "$status"
           set -Eeuo pipefail
           checkout=$1
           prepare=$2
           prepare_tls=$3
           signal_host=$4
           revision=$5
+          open_https=$6
+          if [[ "$open_https" == true ]]; then
+            [[ -n $(ss -H -ltn 'sport = :443') ]] || { echo 'Refusing firewall change: HTTPS is not listening'; exit 1; }
+            sudo -n tee /etc/systemd/system/lazarus-share-https-firewall.service >/dev/null <<'UNIT'
+          [Unit]
+          Description=Allow Lazarus Share HTTPS without changing other firewall rules
+          After=network-pre.target netfilter-persistent.service ufw.service
+          Before=docker.service
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/bin/sh -c '/usr/sbin/iptables -w 5 -C INPUT -p tcp --dport 443 -m comment --comment lazarus-share-https -j ACCEPT || /usr/sbin/iptables -w 5 -I INPUT 1 -p tcp --dport 443 -m comment --comment lazarus-share-https -j ACCEPT'
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+            sudo -n systemctl daemon-reload
+            sudo -n systemctl enable --now lazarus-share-https-firewall.service
+            sudo -n iptables -w 5 -C INPUT -p tcp --dport 443 -m comment --comment lazarus-share-https -j ACCEPT
+            echo 'Dedicated TCP 443 host firewall rule enabled; other rules unchanged'
+          fi
           if [[ "$prepare" == true ]]; then
             if [[ ! -d "$checkout/.git" ]]; then
               if [[ ! -d "$checkout" ]]; then
@@ -126,7 +153,15 @@ jobs:
           if [[ -r /sys/class/dmi/id/sys_vendor ]]; then printf 'Machine vendor: '; cat /sys/class/dmi/id/sys_vendor; fi
           REMOTE
           if [[ "${CHECK_PUBLIC_HTTPS:-false}" == true ]]; then
-            python3 - "$status" <<'PYHTTPS'
+            packet_count="$RUNNER_TEMP/lazarus-https-syn-count"
+            ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
+              -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
+              "sudo -n timeout 18 tcpdump -nn -l -i any 'tcp dst port 443 and tcp[tcpflags] & tcp-syn != 0' 2>/dev/null | wc -l" > "$packet_count" &
+            observer=$!
+            sleep 3
+            public_result=0
+            python3 - "$status" <<'PYHTTPS' || public_result=$?
           import hashlib,json,os,re,socket,ssl,sys,urllib.request
           from pathlib import Path
           host=os.environ['SIGNAL_HOST']
@@ -142,4 +177,7 @@ jobs:
               assert json.load(response)=={'ok':True}
           print('Public HTTPS passed from GitHub runner with verified certificate')
           PYHTTPS
+            wait "$observer" || true
+            printf 'Inbound HTTPS SYN observations during public probe: %s\n' "$(cat "$packet_count")"
+            exit "$public_result"
           fi
