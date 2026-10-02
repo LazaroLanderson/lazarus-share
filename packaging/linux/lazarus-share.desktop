@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Lazarus Share
+Exec=lazarus-share
+Icon=lazarus-share
+Categories=Network;AudioVideo;
+Terminal=false

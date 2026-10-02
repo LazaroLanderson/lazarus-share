@@ -1,0 +1,65 @@
+name: Build and verify
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config
+          qt6-base-dev qt6-websockets-dev qt6-wayland qt6-qpa-plugins libgstreamer1.0-dev
+          libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libpipewire-0.3-dev
+          gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+          gstreamer1.0-nice gstreamer1.0-pipewire gstreamer1.0-pulseaudio coturn pipewire-bin wireplumber
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
+      - run: ctest --test-dir build --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - run: python3 server/tests/relay_local.py
+      - run: |
+          if wireplumber --help | grep -q -- '--profile'; then
+            python3 server/tests/audio_isolated.py
+          else
+            echo 'Native audio isolation needs WirePlumber 0.5; this runner has an older version.'
+          fi
+      - run: python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt && .venv/bin/python -m unittest discover -s server/tests -v
+      - run: .venv/bin/python server/tests/session_local.py --four-viewers
+      - run: .venv/bin/python server/tests/local_tls.py
+      - run: python3 packaging/linux/bundle.py
+      - run: |
+          curl -fL https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -o /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          ARCH=x86_64 /tmp/appimagetool --appimage-extract-and-run dist/LazarusShare.AppDir dist/LazarusShare-x86_64.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LazarusShare-Linux
+          path: dist/*.AppImage
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-pkgconf mingw-w64-x86_64-qt6-base mingw-w64-x86_64-qt6-websockets
+            mingw-w64-x86_64-gstreamer mingw-w64-x86_64-gst-plugins-base
+            mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad
+            mingw-w64-x86_64-libnice mingw-w64-x86_64-python
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
+      - run: ctest --test-dir build -R protocol --output-on-failure
+      - run: python packaging/windows/bundle.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LazarusShare-Windows
+          path: dist/LazarusShare.exe
