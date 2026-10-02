@@ -17,7 +17,7 @@ def metadata(path):
 
 def permits_https(rule):
     """Recognize public IPv4 access, including wider TCP port ranges."""
-    if rule.source != '0.0.0.0/0' or rule.source_type != 'CIDR' or rule.is_stateless:
+    if rule.source != '0.0.0.0/0' or rule.source_type != 'CIDR_BLOCK' or rule.is_stateless:
         return False
     if rule.protocol == 'all':
         return True
@@ -76,7 +76,7 @@ def main():
             raise RuntimeError('Security list ETag absent; refusing an unprotected update')
         models = oci.core.models
         new_rule = models.IngressSecurityRule(
-            protocol='6', source='0.0.0.0/0', source_type='CIDR', is_stateless=False,
+            protocol='6', source='0.0.0.0/0', source_type='CIDR_BLOCK', is_stateless=False,
             description='Lazarus Share HTTPS signaling',
             tcp_options=models.TcpOptions(destination_port_range=models.PortRange(min=443, max=443)),
         )

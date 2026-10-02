@@ -22,7 +22,7 @@ def plain(value):
 
 class Firewall(unittest.TestCase):
     def execute(self, *, apply=False, etag='revision', allowed=False, public_ip='192.0.2.1'):
-        rule = Obj(protocol='6', source='0.0.0.0/0', source_type='CIDR', is_stateless=False,
+        rule = Obj(protocol='6', source='0.0.0.0/0', source_type='CIDR_BLOCK', is_stateless=False,
                    tcp_options=Obj(source_port_range=None, destination_port_range=Obj(min=443 if allowed else 22, max=443 if allowed else 22)))
         original = Obj(ingress_security_rules=[rule], egress_security_rules=[Obj(protocol='all', destination='0.0.0.0/0')])
         calls = []
@@ -66,6 +66,7 @@ class Firewall(unittest.TestCase):
         self.assertEqual(details.egress_security_rules, original.egress_security_rules)
         self.assertEqual(details.ingress_security_rules[-1].tcp_options.destination_port_range.min, 443)
         self.assertEqual(details.ingress_security_rules[-1].tcp_options.destination_port_range.max, 443)
+        self.assertEqual(details.ingress_security_rules[-1].source_type, 'CIDR_BLOCK')
 
     def test_existing_https_does_not_duplicate(self):
         self.assertEqual(self.execute(apply=True, allowed=True)[1], [])
