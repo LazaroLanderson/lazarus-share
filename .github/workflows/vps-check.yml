@@ -117,6 +117,7 @@ jobs:
             count=$(printf '%s\n' "$rules" | grep -cE -- '-j (DROP|REJECT)' || true)
             printf 'Restrictive %s rule count: %s\n' "$chain" "$count"
           done
+          sudo -n iptables -S FORWARD 2>/dev/null | python3 -c 'import sys,shlex; [print("FORWARD order: "+" ".join(shlex.split(line))) for line in sys.stdin if "-j " in line and not any(c in line for c in (".", "/"))]' || true
           REMOTE
           if [[ "${CHECK_PUBLIC_HTTPS:-false}" == true ]]; then
             python3 - "$status" <<'PYHTTPS'
