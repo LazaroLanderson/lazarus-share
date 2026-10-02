@@ -83,8 +83,10 @@ na `main` que afetam `server/`, `infra/` ou o próprio workflow:
    falhar. Uma falha de construção preserva os containers em execução.
 
 Não precisa de registry Docker nem token GitHub na VPS: o repositório é público.
-Os certificados e `infra/.env` ficam na VPS; o workflow não os sobrescreve nem
-os envia para o GitHub. Evite `docker compose config` sem `--quiet`, pois ele
+Os certificados e `infra/.env` ficam na VPS. No modo `signaling`, o workflow
+cria/atualiza somente `SIGNAL_HOST` e `SIGNAL_IP` a partir das Variables, com
+permissão 600 no arquivo, preservando os demais valores privados. Os certificados
+não são sobrescritos nem enviados para o GitHub. Evite `docker compose config` sem `--quiet`, pois ele
 exibe os valores resolvidos das variáveis, inclusive o segredo TURN.
 
 ### Preparação única da VPS
@@ -109,7 +111,9 @@ chmod 600 infra/.env
 mkdir -p infra/certs/signal infra/certs/turn
 ```
 
-Edite `infra/.env`, configure DNS/firewall e coloque os certificados válidos
+Para executar primeiro de forma manual, edite `infra/.env`. No deploy automático
+`signaling`, o arquivo também pode ser gerado pelas Variables do GitHub.
+Configure DNS/firewall e coloque os certificados válidos
 nos diretórios indicados. Inclua `SIGNAL_HOST=salas.seudominio.com` para o teste
 HTTPS do deploy. No modo completo, gere um segredo TURN aleatório com o comando
 do exemplo e use o mesmo valor em sinalização e Coturn. Não use os IPs de exemplo.
@@ -145,8 +149,10 @@ secrets de repositório (os nomes abaixo correspondem às credenciais criadas):
 | `VPS_SSH_KEY` | Chave privada exclusiva do deploy, sem passphrase |
 | `VPS_SSH_KNOWN_HOSTS` | Entrada SSH `known_hosts` da VPS verificada por um canal confiável |
 
-`VPS_HOST` não é um endereço automaticamente configurado no app: é o destino
-SSH do deploy. DNS, `SIGNAL_HOST` e certificados são configurados na VPS.
+`VPS_HOST` é o destino SSH do deploy. No modo `signaling`, configure
+`SIGNAL_HOST` nas Variables para gerar o `.env` na VPS automaticamente. DNS e
+certificados continuam sendo preparados na infraestrutura; os apps usam o domínio
+público e não recebem os secrets do GitHub.
 No modo `signaling`, `SIGNAL_IP` ausente ou vazio usa `0.0.0.0`, que permite
 escutar nas interfaces locais sem tentar vincular um IP público que pode estar
 atrás de NAT. `0.0.0.0` é endereço de escuta, não endereço para digitar no app
@@ -158,6 +164,8 @@ Em **Variables**, configure:
 
 | Variável | Valor |
 | --- | --- |
+| `SIGNAL_HOST` | Domínio real das salas, como `salas.seudominio.com`, sem `https://` nem `/ws`; obrigatório no deploy automático `signaling` |
+| `SIGNAL_IP` | IP local de escuta; padrão `0.0.0.0` no modo `signaling` |
 | `VPS_PORT` | Porta SSH; padrão `22` |
 | `VPS_DEPLOY_PATH` | Checkout na VPS; padrão `/opt/lazarus-share` |
 | `VPS_DEPLOY_MODE` | Padrão `signaling` para um IP; `full` para salas + TURN |

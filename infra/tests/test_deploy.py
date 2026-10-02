@@ -58,6 +58,28 @@ sys.exit(1 if fail else 0)
     def run_deploy(self, phase=''):
         return subprocess.run(['bash', str(SCRIPT), self.new, str(self.repo), 'full'], env=self.env | {'FAIL_PHASE': phase}, capture_output=True, text=True)
 
+    def test_variables_create_private_env_and_preserve_turn_secret(self):
+        env_file = self.repo / 'infra/.env'
+        env_file.unlink()
+        command = ['bash', str(SCRIPT), self.new, str(self.repo), 'signaling', 'salas.example.invalid', '0.0.0.0']
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('SIGNAL_HOST=salas.example.invalid', env_file.read_text())
+        self.assertEqual(env_file.stat().st_mode & 0o777, 0o600)
+        env_file.write_text(env_file.read_text() + 'TURN_SECRET=preserve-private-value\n')
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('TURN_SECRET=preserve-private-value', env_file.read_text())
+        self.assertNotIn('preserve-private-value', result.stdout + result.stderr)
+
+    def test_invalid_variable_does_not_change_env_or_containers(self):
+        env_file = self.repo / 'infra/.env'
+        original = env_file.read_text()
+        result = subprocess.run(['bash', str(SCRIPT), self.new, str(self.repo), 'signaling', 'bad;host', '0.0.0.0'], env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(env_file.read_text(), original)
+        self.assertFalse((self.repo / '.deploy/events').exists())
+
     def test_success_records_revision_and_checks_tls(self):
         result = self.run_deploy()
         self.assertEqual(result.returncode, 0, result.stderr)

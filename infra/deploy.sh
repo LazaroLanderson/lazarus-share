@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Run through SSH, or locally on the VPS: bash infra/deploy.sh COMMIT DIRECTORY MODE
+# Run through SSH, or locally on the VPS: bash infra/deploy.sh COMMIT DIRECTORY MODE [SIGNAL_HOST SIGNAL_IP]
 set -Eeuo pipefail
 revision=${1:?commit SHA required}
 checkout=${2:?checkout directory required}
 mode=${3:-full}
+signal_host=${4:-}
+signal_ip=${5:-0.0.0.0}
 [[ $revision =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid commit SHA' >&2; exit 2; }
 [[ $checkout == /* && -d $checkout/.git ]] || { echo 'Prepare the VPS checkout first' >&2; exit 2; }
 case "$mode" in
@@ -15,10 +17,37 @@ cd "$checkout"
 mkdir -p .deploy
 exec 9>.deploy/lock
 flock -w 300 9 || { echo 'Another deployment is still running' >&2; exit 1; }
-[[ -f infra/.env ]] || { echo 'Missing private infra/.env on VPS' >&2; exit 1; }
 [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo 'Tracked VPS files have local changes' >&2; exit 1; }
 git fetch --no-tags origin main
 git merge-base --is-ancestor "$revision" origin/main || { echo 'Commit is not on origin/main' >&2; exit 1; }
+# Public GitHub Variables configure only the single-IP/P2P mode.
+# The TURN secret and other private configuration are preserved on the VPS.
+if [[ "$mode" == signaling && -n "$signal_host" && "$signal_host" != - ]]; then
+  python3 - "$signal_host" "$signal_ip" <<'PYENV'
+import ipaddress
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+host, address = sys.argv[1:]
+if len(host) > 253 or not all(re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?', label) for label in host.split('.')):
+    raise SystemExit('SIGNAL_HOST must be a valid hostname without scheme/path')
+ipaddress.IPv4Address(address)
+path = Path('infra/.env')
+lines = path.read_text().splitlines() if path.exists() else []
+lines = [line for line in lines if not re.match(r'^\s*(?:export\s+)?SIGNAL_(HOST|IP)\s*=', line)]
+lines += ['SIGNAL_HOST=' + host, 'SIGNAL_IP=' + address]
+with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as output:
+    output.write('\n'.join(lines) + '\n')
+    temporary = output.name
+try:
+    os.replace(temporary, path)
+finally:
+    if os.path.exists(temporary): os.unlink(temporary)
+PYENV
+fi
+[[ -f infra/.env ]] || { echo 'Missing private infra/.env on VPS' >&2; exit 1; }
 # Check TLS and the public health route using SIGNAL_HOST from Compose's environment file.
 host=$(python3 - <<'PY'
 from pathlib import Path
