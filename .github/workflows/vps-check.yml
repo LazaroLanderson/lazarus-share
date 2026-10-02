@@ -1,6 +1,11 @@
 name: Inspect VPS
 on:
   workflow_dispatch:
+    inputs:
+      prepare_checkout:
+        description: Prepare missing VPS project directory (no container or TLS changes)
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -16,6 +21,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER || vars.VPS_USER }}
           VPS_PORT: ${{ vars.VPS_PORT }}
           VPS_DEPLOY_PATH: ${{ vars.VPS_DEPLOY_PATH }}
+          PREPARE_CHECKOUT: ${{ inputs.prepare_checkout }}
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
@@ -26,6 +32,8 @@ jobs:
           VPS_DEPLOY_PATH=${VPS_DEPLOY_PATH:-/opt/lazarus-share}
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
           [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9/_.-]+$ ]]
+          PREPARE_CHECKOUT=${PREPARE_CHECKOUT:-false}
+          [[ "$PREPARE_CHECKOUT" == true || "$PREPARE_CHECKOUT" == false ]]
           [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
           umask 077
           mkdir -p "$RUNNER_TEMP/lazarus-ssh"
@@ -37,9 +45,27 @@ jobs:
           ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \
-            "bash -s -- $VPS_DEPLOY_PATH" <<'REMOTE'
-          set -u
+            "bash -s -- $VPS_DEPLOY_PATH $PREPARE_CHECKOUT" <<'REMOTE'
+          set -Eeuo pipefail
           checkout=$1
+          prepare=$2
+          if [[ "$prepare" == true ]]; then
+            if [[ ! -d "$checkout/.git" ]]; then
+              if [[ ! -d "$checkout" ]]; then
+                if [[ -w $(dirname "$checkout") ]]; then
+                  mkdir -p "$checkout"
+                else
+                  sudo -n install -d -m 750 -o "$(id -u)" -g "$(id -g)" "$checkout"
+                fi
+              fi
+              git clone https://github.com/LazaroLanderson/lazarus-share.git "$checkout"
+            else
+              [[ $(git -C "$checkout" remote get-url origin) == https://github.com/LazaroLanderson/lazarus-share.git ]] || { echo 'Checkout origin does not match Lazarus Share'; exit 1; }
+            fi
+            mkdir -p "$checkout/infra/certs/signal"
+            chmod 700 "$checkout/infra/certs"
+            echo 'Project checkout prepared; containers and certificates unchanged'
+          fi
           . /etc/os-release
           printf 'System: %s\n' "$PRETTY_NAME"
           printf 'Architecture: %s\n' "$(uname -m)"
