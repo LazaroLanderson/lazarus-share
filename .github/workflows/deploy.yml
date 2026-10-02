@@ -80,7 +80,7 @@ jobs:
           key="$RUNNER_TEMP/lazarus-ssh/key"
           hosts="$RUNNER_TEMP/lazarus-ssh/known_hosts"
           trap 'rm -f "$key" "$hosts"' EXIT
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$key"
+          python3 infra/prepare_ssh.py "$key"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
           ssh -i "$key" -p "$VPS_PORT" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
