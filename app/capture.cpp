@@ -126,13 +126,15 @@ GstFlowReturn Capture::sample(GstAppSink *sink, gpointer data) {
     self->latest_ = sample;
     if(self->nv12_)gst_sample_unref(self->nv12_);
     QElapsedTimer clock;clock.start();
-    self->nv12_=self->nv12Required_?self->preparer_.nv12(sample):nullptr;
+    bool required=self->nv12Required_.load();
+    self->nv12_=required?self->preparer_.nv12(sample):nullptr;
+    if(required && !self->nv12_)++self->preparationDiscarded_;
     if(self->nv12_){self->prepareNs_+=clock.nsecsElapsed();++self->prepared_;}
     return GST_FLOW_OK;
 }
 QJsonObject Capture::takeMetrics() {
-    QMutexLocker lock(&mutex_);QJsonObject result{{"frames_discarded",int(discarded_)},{"prepare_us",prepared_?double(prepareNs_)/prepared_/1000:0}};
-    discarded_=prepared_=0;prepareNs_=0;return result;
+    QMutexLocker lock(&mutex_);QJsonObject result{{"frames_prepare_discarded",int(preparationDiscarded_)},{"frames_discarded",int(discarded_)},{"prepare_us",prepared_?double(prepareNs_)/prepared_/1000:0}};
+    discarded_=prepared_=preparationDiscarded_=0;prepareNs_=0;return result;
 }
 GstSample *Capture::takeVideo(GstSample **nv12) {
     QMutexLocker lock(&mutex_); auto *out = latest_; latest_ = nullptr;

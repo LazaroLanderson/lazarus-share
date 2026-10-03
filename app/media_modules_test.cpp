@@ -42,7 +42,7 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
     gst_sample_unref(converted);gst_sample_unref(sample);gst_buffer_unref(buffer);gst_caps_unref(caps);
     VideoView view;view.resize(640,360);view.show();
     for(auto format:{QImage::Format_RGB888,QImage::Format_RGB32,QImage::Format_RGBA8888,QImage::Format_RGB888}){
-        QImage picture(1280,720,format);picture.fill(QColor(12,34,56));view.setFrame(picture);app.processEvents();
+        QImage picture(1280,720,format);picture.fill(QColor(12,34,56));if(format==QImage::Format_RGB32){for(int y=0;y<picture.height();++y){auto *row=reinterpret_cast<quint32 *>(picture.scanLine(y));for(int x=0;x<picture.width();++x)row[x]&=0x00ffffff;}}view.setFrame(picture);app.processEvents();
         check(view.hasFrame(),"Render frame lost");auto rendered=view.grab().toImage();
         check(rendered.pixelColor(rendered.width()/2,rendered.height()/2)==QColor(12,34,56),"Rendered pixel integrity or format switch");
     }

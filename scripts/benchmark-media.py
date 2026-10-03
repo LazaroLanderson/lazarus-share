@@ -91,15 +91,16 @@ def run(binary,preset,count,backend,repeat):
     finally:
         watchdog.cancel()
         if child.poll() is None:child.terminate();child.wait(timeout=5)
-    result={'preset':preset,'viewers':count,'requested_backend':backend,'repeat':repeat,'version':'baseline' if binary==a.baseline else 'current','width':width,'height':height,'target_fps':fps,'target_kbps':kbps,'warmup_s':a.warmup,'measurement_s':a.duration,'exit_code':code,'renderer':'software','host':summarize(readers[0]) if readers else None,'clients':[summarize(r) for r in readers[1:]],'gpu_counter_source':'DRM fdinfo when available'}
+    result={'preset':preset,'viewers':count,'requested_backend':backend,'repeat':repeat,'version':'baseline' if binary==a.baseline else 'current','width':width,'height':height,'target_fps':fps,'target_kbps':kbps,'warmup_s':a.warmup,'measurement_s':a.duration,'exit_code':code,'renderer':'software','discard_counter_available':binary!=a.baseline,'host':summarize(readers[0]) if readers else None,'clients':[summarize(r) for r in readers[1:]],'gpu_counter_source':'DRM fdinfo when available'}
     streams=[]
     for index in range(count):
         values=[sample['connections'][index] for sample in stats]
         encoders={v['encoded'].get('encoder','') for v in values}
-        streams.append({'encoder':sorted(encoders),'encoded_fps':statistics.mean([v['encoded'].get('video_fps',0) for v in values]) if values else 0,'decoded_fps':statistics.mean([v['decoded'].get('video_fps',0) for v in values]) if values else 0,'video_kbps':statistics.mean([v['encoded'].get('kbps',0) for v in values]) if values else 0,'discarded_frames_per_sample':statistics.mean([v['encoded'].get('frames_discarded',0) for v in values]) if values else None,'latency_p50_ms':percentile(latency[index],.5),'latency_p95_ms':percentile(latency[index],.95),'identified_frames':len(latency[index])})
+        streams.append({'encoder':sorted(encoders),'encoded_fps':statistics.mean([v['encoded'].get('video_fps',0) for v in values]) if values else 0,'decoded_fps':statistics.mean([v['decoded'].get('video_fps',0) for v in values]) if values else 0,'video_kbps':statistics.mean([v['encoded'].get('kbps',0) for v in values]) if values else 0,'discarded_frames_per_sample':statistics.mean([v['encoded'].get('frames_discarded',0) for v in values]) if values and binary!=a.baseline else None,'viewer_discarded_frames_per_sample':statistics.mean([v['decoded'].get('frames_discarded',0) for v in values]) if values and binary!=a.baseline else None,'latency_p50_ms':percentile(latency[index],.5),'latency_p95_ms':percentile(latency[index],.95),'identified_frames':len(latency[index])})
     result['measured_elapsed_s']=(records[-1]['elapsed_ms']-records[0]['elapsed_ms'])/1000 if records else 0
     result['window_aligned']=True
     result['binary_sha256']=hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+    result['frames_prepare_discarded']=sum(s.get('frames_prepare_discarded',0) for s in stats) if binary!=a.baseline else None
     result['captured_fps']=statistics.mean([s['capture_fps'] for s in stats]) if stats else 0
     result['streams']=streams
     result['hardware_available']=any('GPU' in e or 'NVENC' in e or 'Quick Sync' in e for stream in streams for e in stream['encoder']) if backend=='hardware' else None

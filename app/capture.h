@@ -42,7 +42,7 @@ private:
     GstElement *pipeline_ = nullptr, *filter_ = nullptr;
     GstSample *latest_ = nullptr,*nv12_=nullptr;
     FramePreparer preparer_;
-    unsigned discarded_=0,prepared_=0;
+    unsigned discarded_=0,prepared_=0,preparationDiscarded_=0;
     quint64 prepareNs_=0;
     std::atomic<bool> nv12Required_{false};
     QString rawFormat_ = "I420";

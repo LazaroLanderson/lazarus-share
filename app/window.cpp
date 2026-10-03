@@ -393,7 +393,7 @@ void Window::tick() {
         if(auto *sample=capture_.takeVideo(&prepared)) {
             GstVideoInfo actual;bool valid=gst_video_info_from_caps(&actual,gst_sample_get_caps(sample));
             if(!valid || QSize(actual.width,actual.height)!=capture_.dimensions()){gst_sample_unref(sample);if(prepared)gst_sample_unref(prepared);return;}
-            for(auto &[id,c]:peers_)if(c->media)c->media->video(c->media->inputFormat()=="NV12" && prepared?prepared:sample);
+            for(auto &[id,c]:peers_)if(c->media){if(c->media->inputFormat()=="NV12"){if(prepared)c->media->video(prepared);}else c->media->video(sample);}
             gst_sample_unref(sample);if(prepared)gst_sample_unref(prepared);++frames_;
         }
         for (auto *sample : audio_.takeSamples()) {
@@ -406,7 +406,7 @@ void Window::tick() {
             metrics_->setText(QString("Captura %1×%2 | %3 FPS de captura | upload de vídeo %4 kbps | teto %5 kbps/viewer | %6")
                 .arg(size.width()).arg(size.height()).arg(frames_ * 1000.0 / (time_.elapsed() - lastFrameTime_),0,'f',1).arg(total,0,'f',0).arg(quality().kbps).arg(peers_.empty() || !peers_.begin()->second->media ? "Aguardando viewer" : peers_.begin()->second->media->encoderName()));
             auto captureMetrics=capture_.takeMetrics();
-            log("capture_metrics", {}, {{"frames_discarded",captureMetrics["frames_discarded"]},{"prepare_us",captureMetrics["prepare_us"]},{"width",size.width()},{"height",size.height()},{"capture_fps",frames_ * 1000.0 / (time_.elapsed() - lastFrameTime_)},{"kbps",total},{"target_fps",quality().fps},{"target_kbps",quality().kbps}});
+            log("capture_metrics", {}, {{"frames_prepare_discarded",captureMetrics["frames_prepare_discarded"]},{"frames_discarded",captureMetrics["frames_discarded"]},{"prepare_us",captureMetrics["prepare_us"]},{"width",size.width()},{"height",size.height()},{"capture_fps",frames_ * 1000.0 / (time_.elapsed() - lastFrameTime_)},{"kbps",total},{"target_fps",quality().fps},{"target_kbps",quality().kbps}});
             frames_ = 0; lastFrameTime_ = time_.elapsed();
         }
     } else {

@@ -23,7 +23,7 @@ protected:
     void initializeGL() override {
         initializeOpenGLFunctions();program_=std::make_unique<QOpenGLShaderProgram>();
         const char *vertex="attribute vec2 position; attribute vec2 uv; varying vec2 coord; void main(){coord=uv;gl_Position=vec4(position,0.,1.);}";
-        QByteArray fragment=(context()->isOpenGLES()?"precision mediump float;":"")+QByteArray("varying vec2 coord; uniform sampler2D frame; void main(){gl_FragColor=texture2D(frame,coord);}");
+        QByteArray fragment=(context()->isOpenGLES()?"precision mediump float;":"")+QByteArray("varying vec2 coord; uniform sampler2D frame; void main(){gl_FragColor=vec4(texture2D(frame,coord).rgb,1.);}");
         ready_=program_->addShaderFromSourceCode(QOpenGLShader::Vertex,vertex) && program_->addShaderFromSourceCode(QOpenGLShader::Fragment,fragment) && program_->link() && buffer_.create();
         if(!ready_){owner_->gpuFailed_=true;QTimer::singleShot(0,owner_,[this]{hide();owner_->QLabel::setPixmap(QPixmap::fromImage(owner_->image_));owner_->update();});return;}
         glGenTextures(1,&texture_);glBindTexture(GL_TEXTURE_2D,texture_);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
