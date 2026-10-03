@@ -89,3 +89,18 @@ imediatamente a rota relay e revoga o consentimento no servidor.
 
 Clientes 0.1.4 continuam com o comportamento antigo, sem nickname e pausa visual.
 Atualizar todos os participantes é recomendado. Criptografia e envelope v1 não mudam.
+
+### Recuperação de mídia — 0.2.1
+
+O controle autenticado `restart` aceita `reason` opcional (`encoder_fallback`).
+O host incrementa a geração somente para o viewer afetado, mantém `transport`
+e o consentimento de relay e renegocia SDP/codec. Mensagens e callbacks de gerações
+anteriores são descartados. O viewer 0.2.0 ignora o motivo opcional e recebe a
+negociação normalmente; atualizar ambos continua recomendado.
+
+Erros locais são classificados como `encoder_start`, `encoder_error`,
+`encoder_stall`, `software_unavailable`, `decoder_error` ou `media_pipeline`;
+falhas ICE/DTLS seguem no fluxo de transporte. Um erro de encoder permite uma
+única recuperação por software por conexão/configuração; falha posterior aguarda
+nova tentativa manual. `encoder_stall` indica ausência de saída, não prova defeito
+no hardware. Criar/reconectar uma sala parada não inicia captura.

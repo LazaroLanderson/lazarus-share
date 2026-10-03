@@ -8,7 +8,7 @@
 #include <QSet>
 static QJsonObject sanitized(const QJsonObject &input) {
     // Only structured fields produced by the app; never raw messages/SDP/GStreamer errors.
-    static const QSet<QString> keys = {"nickname", "own_nickname", "build", "avatar", "peer", "session", "generation", "attempt", "role", "sharing", "relay_local", "relay_remote", "route", "last_route", "stage", "ice_state", "gathering_state", "dtls_state", "local_description", "remote_description", "local_candidates", "remote_candidates", "candidate_counts", "local", "remote", "host", "srflx", "prflx", "relay", "udp", "tcp", "metrics", "encoder", "encoder_kbps", "width", "height", "video_fps", "kbps", "loss_percent", "rtt_ms", "packets", "bytes", "error_code", "preset", "failed", "selected_pair", "capture_fps", "target_fps", "target_kbps", "transport"};
+    static const QSet<QString> keys = {"nickname", "own_nickname", "build", "avatar", "peer", "session", "generation", "attempt", "role", "sharing", "relay_local", "relay_remote", "route", "last_route", "stage", "ice_state", "gathering_state", "dtls_state", "local_description", "remote_description", "local_candidates", "remote_candidates", "candidate_counts", "local", "remote", "host", "srflx", "prflx", "relay", "udp", "tcp", "metrics", "encoder", "encoder_kbps", "width", "height", "video_fps", "kbps", "loss_percent", "rtt_ms", "packets", "bytes", "error_code", "preset", "failed", "selected_pair", "capture_fps", "target_fps", "target_kbps", "transport", "bitrate_changed", "feedback_valid", "frames_discarded", "prepare_us", "frames_pending_estimate", "render_backend"};
     QJsonObject out;
     for (auto it = input.begin(); it != input.end(); ++it) if (keys.contains(it.key())) {
         if (it.value().isObject()) out[it.key()] = sanitized(it.value().toObject());
@@ -39,7 +39,7 @@ void DiagnosticLog::prune() {
 }
 void DiagnosticLog::append(QString event, QJsonObject fields) {
     auto now = QDateTime::currentMSecsSinceEpoch(); if (now-lastPrune_ >= 60000) { prune(); lastPrune_=now; } const QString base = directory_ + "/events-0.jsonl";
-    auto value = sanitized(fields); value["event"] = event; value["utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs); value["version"] = "0.2.0";
+    auto value = sanitized(fields); value["event"] = event; value["utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs); value["version"] = "0.2.1";
 #ifdef LAZARUS_BUILD_ID
     value["build"] = LAZARUS_BUILD_ID;
 #endif

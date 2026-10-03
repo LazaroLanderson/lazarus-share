@@ -1,5 +1,6 @@
 #pragma once
 #include "audio.h"
+#include "videoview.h"
 #include "capture.h"
 #include "protocol.h"
 #include "profile.h"
@@ -35,6 +36,9 @@ private:
         qint64 turnExpiry = 0;
         bool fatalMedia = false, exhausted = false, relayRequested = false, everConnected = false, modern = false;
         int generation = 1, retries = 0;
+        bool software=false, selecting=false;
+        int selection=0;
+        int encoderWidth=0,encoderHeight=0,encoderFps=0;
         int pendingRestart = 0;
         QJsonArray pendingSignals;
         qint64 started = 0;
@@ -57,6 +61,8 @@ private:
     void send(QJsonObject message);
     void message(const QJsonObject &message);
     void startPeer(const QString &id);
+    void attachPeer(const QString &id, VideoEncoder backend, int generation);
+    void mediaFailure(const QString &id,int generation,const QString &code);
     void signal(const QString &id, QJsonObject body);
     void relay();
     void tick();
@@ -77,7 +83,8 @@ private:
     QSpinBox *width_, *height_, *fps_, *bitrate_;
     QListWidget *viewers_, *apps_;
     QPushButton *create_, *join_, *stop_, *approve_, *remove_, *relay_;
-    QLabel *status_, *video_, *metrics_, *audioStatus_;
+    QLabel *status_, *metrics_, *audioStatus_;
+    VideoView *video_;
     QWebSocket socket_;
     Capture capture_;
     Audio audio_;

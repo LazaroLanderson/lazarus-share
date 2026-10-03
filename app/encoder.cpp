@@ -3,6 +3,9 @@
 #include <gst/app/gstappsink.h>
 #include <QProcessEnvironment>
 #include <algorithm>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QHash>
 
 static QString hardwareChain(const char *factory, int fps, int kbps) {
     auto *element = gst_element_factory_make(factory, nullptr);
@@ -31,9 +34,9 @@ static QString hardwareChain(const char *factory, int fps, int kbps) {
         chain.prepend("vapostproc disable-passthrough=true ! video/x-raw(memory:VAMemory),format=NV12 ! ");
     return chain;
 }
-static bool validate(const QString &chain) {
+static bool validate(const QString &chain,int width,int height,int fps) {
     GError *error = nullptr;
-    auto text = QString("videotestsrc num-buffers=8 ! video/x-raw,format=NV12,width=320,height=240,framerate=30/1 ! %1 ! h264parse ! openh264dec ! appsink name=probe sync=false max-buffers=1 drop=true").arg(chain);
+    auto text = QString("videotestsrc num-buffers=8 ! video/x-raw,format=NV12,width=%2,height=%3,framerate=%4/1 ! %1 ! h264parse ! openh264dec ! appsink name=probe sync=false max-buffers=1 drop=true").arg(chain).arg(width).arg(height).arg(fps);
     auto *pipeline = gst_parse_launch(text.toUtf8().constData(), &error);
     if (error || !pipeline) {
         if (error) g_error_free(error);
@@ -52,25 +55,34 @@ static bool validate(const QString &chain) {
     gst_object_unref(pipeline);
     return ok;
 }
-VideoEncoder selectVideoEncoder(int fps, int kbps) {
-    // The selection is cached, while bitrate and GOP remain specific to each viewer.
-    static const QString selected = [] {
-        if (qEnvironmentVariable("LAZARUS_VIDEO_ENCODER") == "vp8") return QString();
-        for (const char *factory : {"nvh264enc", "nvd3d11h264enc", "qsvh264enc", "vah264enc", "vah264lpenc"}) {
-            QString chain = hardwareChain(factory, 30, 2000);
-            if (!chain.isEmpty() && validate(chain)) return QString::fromLatin1(factory);
-        }
-        return QString();
-    }();
+VideoEncoder selectVideoEncoder(int fps,int kbps,int width,int height,bool software) {
     VideoEncoder result;
-    if (!selected.isEmpty()) {
-        result.chain = hardwareChain(selected.toLatin1().constData(), fps, kbps);
-        result.format = "NV12"; result.codec = "H264";
-        result.name = selected.startsWith("nv") ? "H.264 / NVIDIA NVENC" :
-                      selected.startsWith("qsv") ? "H.264 / Intel Quick Sync" : "H.264 / VA-API (GPU)";
-        result.bitrateProperty = "bitrate"; result.bitrateMultiplier = 1;
-    } else {
-        result.chain = QString("vp8enc name=encoder deadline=1 cpu-used=6 threads=4 lag-in-frames=0 keyframe-max-dist=%1 target-bitrate=%2").arg(fps).arg(kbps * 1000);
+    if(!software && qEnvironmentVariable("LAZARUS_VIDEO_ENCODER")!="vp8") {
+        static QMutex mutex;static QHash<QString,bool> probes;
+        QMutexLocker lock(&mutex);
+        for(const char *factory:{"nvh264enc","nvd3d11h264enc","qsvh264enc","vah264enc","vah264lpenc"}) {
+            QString chain=hardwareChain(factory,fps,kbps);if(chain.isEmpty())continue;
+            // Factories select their default device for this process. Include its reported
+            // identity and the complete requested configuration in the runtime cache.
+            auto *device=gst_element_factory_make(factory,nullptr);QString identity;
+            for(const char *property:{"render-device","device-path","adapter-luid","cuda-device-id"}) {
+                if(device && g_object_class_find_property(G_OBJECT_GET_CLASS(device),property)) {
+                    GValue value=G_VALUE_INIT;auto *spec=g_object_class_find_property(G_OBJECT_GET_CLASS(device),property);
+                    g_value_init(&value,G_PARAM_SPEC_VALUE_TYPE(spec));g_object_get_property(G_OBJECT(device),property,&value);
+                    gchar *serialized=gst_value_serialize(&value);if(serialized){identity+=QString::fromUtf8(serialized);g_free(serialized);}g_value_unset(&value);
+                }
+            }
+            if(device)gst_object_unref(device);
+            QString key=QString("%1:%2:%3:%4:%5:%6").arg(factory).arg(identity).arg(width).arg(height).arg(fps).arg(kbps);
+            if(!probes.contains(key))probes[key]=validate(chain,width,height,fps);
+            if(!probes[key])continue;
+            result.factory=QString::fromLatin1(factory);result.chain=chain;result.format="NV12";result.codec="H264";
+            result.name=result.factory.startsWith("nv")?"H.264 / NVIDIA NVENC":result.factory.startsWith("qsv")?"H.264 / Intel Quick Sync":"H.264 / VA-API (GPU)";
+            result.bitrateProperty="bitrate";result.bitrateMultiplier=1;return result;
+        }
     }
+    auto *factory=gst_element_factory_find("vp8enc");if(!factory){result.name="Software indisponível";return result;}gst_object_unref(factory);
+    result.factory="vp8enc";
+    result.chain=QString("vp8enc name=encoder deadline=1 cpu-used=6 threads=4 lag-in-frames=0 keyframe-max-dist=%1 target-bitrate=%2").arg(fps).arg(kbps*1000);
     return result;
 }

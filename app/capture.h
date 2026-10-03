@@ -1,5 +1,6 @@
 #pragma once
 #include "peer.h"
+#include "frameprep.h"
 #include <QMutex>
 #include <QSize>
 #include <functional>
@@ -15,7 +16,9 @@ public:
     void start(int monitor, Quality quality, bool testPattern = false);
     void stop();
     void quality(Quality quality);
-    GstSample *takeVideo();
+    GstSample *takeVideo(GstSample **nv12=nullptr);
+    QJsonObject takeMetrics();
+    void requireNv12(bool value) { nv12Required_=value; }
     QSize sourceSize() const { return sourceSize_; }
     QSize dimensions() const { return dimensions_; }
 signals:
@@ -37,7 +40,11 @@ private:
 #endif
     static GstFlowReturn sample(GstAppSink *, gpointer);
     GstElement *pipeline_ = nullptr, *filter_ = nullptr;
-    GstSample *latest_ = nullptr;
+    GstSample *latest_ = nullptr,*nv12_=nullptr;
+    FramePreparer preparer_;
+    unsigned discarded_=0,prepared_=0;
+    quint64 prepareNs_=0;
+    std::atomic<bool> nv12Required_{false};
     QString rawFormat_ = "I420";
     Quality quality_;
     QSize sourceSize_, dimensions_;

@@ -42,7 +42,7 @@ void Capture::stop() {
     timer_.stop();
     if (pipeline_) { gst_element_set_state(pipeline_, GST_STATE_NULL); gst_object_unref(pipeline_); pipeline_ = nullptr; }
     if (filter_) { gst_object_unref(filter_); filter_ = nullptr; }
-    { QMutexLocker lock(&mutex_); if (latest_) gst_sample_unref(latest_); latest_ = nullptr; }
+    { QMutexLocker lock(&mutex_); if (latest_) gst_sample_unref(latest_); latest_ = nullptr;if(nv12_)gst_sample_unref(nv12_);nv12_=nullptr; }
 #ifndef Q_OS_WIN
     for (auto it = requests_.begin(); it != requests_.end(); ++it) {
         QDBusInterface request("org.freedesktop.portal.Desktop", it.key(), "org.freedesktop.portal.Request");
@@ -62,7 +62,7 @@ void Capture::start(int monitor, Quality quality, bool testPattern) {
     rawFormat_ = "I420";
     // I420 forces the VA upload path to renegotiate allocation on size changes.
     // NV12 passthrough in GStreamer 1.24 can retain a pool with the old dimensions.
-    selectVideoEncoder(quality.fps, quality.kbps);
+
     auto screens = QGuiApplication::screens();
     if (screens.isEmpty()) { emit error("Nenhum monitor disponível."); return; }
     monitor = qBound(0, monitor, int(screens.size()) - 1);
@@ -115,11 +115,21 @@ GstFlowReturn Capture::sample(GstAppSink *sink, gpointer data) {
     auto *self = static_cast<Capture *>(data);
     auto *sample = gst_app_sink_pull_sample(sink); if (!sample) return GST_FLOW_EOS;
     QMutexLocker lock(&self->mutex_);
-    if (self->latest_) gst_sample_unref(self->latest_);
-    self->latest_ = sample; return GST_FLOW_OK;
+    if (self->latest_) {gst_sample_unref(self->latest_);++self->discarded_;}
+    self->latest_ = sample;
+    if(self->nv12_)gst_sample_unref(self->nv12_);
+    QElapsedTimer clock;clock.start();
+    self->nv12_=self->nv12Required_?self->preparer_.nv12(sample):nullptr;
+    if(self->nv12_){self->prepareNs_+=clock.nsecsElapsed();++self->prepared_;}
+    return GST_FLOW_OK;
 }
-GstSample *Capture::takeVideo() {
-    QMutexLocker lock(&mutex_); auto *out = latest_; latest_ = nullptr; return out;
+QJsonObject Capture::takeMetrics() {
+    QMutexLocker lock(&mutex_);QJsonObject result{{"frames_discarded",int(discarded_)},{"prepare_us",prepared_?double(prepareNs_)/prepared_/1000:0}};
+    discarded_=prepared_=0;prepareNs_=0;return result;
+}
+GstSample *Capture::takeVideo(GstSample **nv12) {
+    QMutexLocker lock(&mutex_); auto *out = latest_; latest_ = nullptr;
+    if(nv12){*nv12=nv12_;nv12_=nullptr;}else if(nv12_){gst_sample_unref(nv12_);nv12_=nullptr;}return out;
 }
 #ifndef Q_OS_WIN
 void Capture::request(const QString &method, const QVariantList &args, const QVariantMap &extra,

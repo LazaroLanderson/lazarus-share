@@ -513,3 +513,10 @@ O código do projeto é **GPL-3.0-only**. Veja [LICENSE](LICENSE).
 Qt, GStreamer, libnice, PipeWire, VP8, Opus, OpenH264 e outras dependências têm
 suas próprias licenças. Consulte [THIRD_PARTY.md](docs/THIRD_PARTY.md) e os
 [avisos de dependências](docs/licenses/notices). Os pacotes incluem esses avisos.
+
+### Desenvolvimento 0.2.1
+
+A atualização de desempenho e recuperação está em validação; os downloads públicos
+continuam na versão publicada até o aceite. Veja [notas 0.2.1](docs/releases/0.2.1.md)
+e [método/resultados de desempenho](docs/PERFORMANCE-0.2.1.md). O benchmark local
+não captura tela nem altera os serviços da VPS.

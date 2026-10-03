@@ -1,4 +1,6 @@
 #pragma once
+#include "encoder.h"
+#include "bitrate.h"
 #include <QObject>
 #include <QImage>
 #include <QJsonObject>
@@ -18,12 +20,14 @@ class Peer : public QObject {
 public:
     explicit Peer(bool host, QObject *parent = nullptr);
     ~Peer() override;
-    bool start(Quality quality, const QString &stun, const QStringList &turn = {});
+    bool start(Quality quality, const QString &stun, const QStringList &turn = {}, const VideoEncoder &backend = {});
     void receive(const QJsonObject &message);
     void video(GstSample *sample);
     void audio(GstSample *sample);
     void quality(Quality value);
     QImage takeFrame();
+    QString inputFormat() const { return inputFormat_; }
+    QString encoderFactory() const { return encoderFactory_; }
     QString encoderName() const { return encoderName_; }
     bool connected() const { return connected_; }
 signals:
@@ -32,6 +36,7 @@ signals:
     void metrics(QJsonObject values);
     void error(QString message);
     void transportError();
+    void mediaFailure(QString code);
 private:
     static void offerNeeded(GstElement *, gpointer);
     static void descriptionCreated(GstPromise *, gpointer);
@@ -44,8 +49,14 @@ private:
     void applyStats(const QJsonObject &values);
     void push(GstElement *source, GstSample *sample);
     bool host_, offered_ = false, remoteSet_ = false, connected_ = false;
-    GstElement *pipeline_ = nullptr, *rtc_ = nullptr, *video_ = nullptr, *audio_ = nullptr, *encoder_ = nullptr;
+    GstElement *pipeline_ = nullptr, *rtc_ = nullptr, *video_ = nullptr, *audio_ = nullptr, *encoder_ = nullptr,*pay_=nullptr;
     Quality quality_;
+    BitrateController control_;
+    QString inputFormat_="I420",encoderFactory_;
+    std::atomic<unsigned> inputFrames_{0},queueDrops_{0},displayDrops_{0};
+    std::atomic<qint64> lastEncodedMs_{0},lastInputMs_{0};
+    qint64 connectedAt_=0;
+    bool stalled_=false;
     int targetKbps_ = 8000, currentKbps_ = 8000;
     QByteArray bitrateProperty_ = "target-bitrate";
     int bitrateMultiplier_ = 1000;
@@ -54,6 +65,7 @@ private:
     QImage frame_;
     QTimer timer_;
     QElapsedTimer statsTime_;
+    std::atomic<unsigned> videoSsrc_{0};
     std::atomic<unsigned> encodedFrames_{0}, decodedFrames_{0};
     quint64 lastBytes_ = 0;
     qint64 lastLost_ = 0, lastPackets_ = 0;

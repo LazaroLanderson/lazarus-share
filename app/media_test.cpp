@@ -7,6 +7,13 @@
 #include <cmath>
 int main(int argc, char **argv) {
     gst_init(&argc, &argv); QCoreApplication app(argc, argv);
+    if(app.arguments().contains("--encoder-creation-failure")) {
+        Peer peer(true);QString classified;
+        QObject::connect(&peer,&Peer::mediaFailure,&app,[&](QString code){classified=code;});
+        VideoEncoder broken;broken.factory="missing-test-encoder";broken.chain="missing-test-encoder name=encoder";
+        if(peer.start(Quality{}, {}, {}, broken) || classified!="encoder_start")return 1;
+        std::cout<<"Encoder creation failure classified separately from transport\n";return 0;
+    }
     bool stress = app.arguments().contains("--stress-quality");
     Peer host(true), guest(false); Quality q = stress ? Quality{1920,1080,60,8000} : Quality{640,360,30,1200};
     auto key = Protocol::randomBytes(16);

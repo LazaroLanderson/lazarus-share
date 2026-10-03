@@ -15,11 +15,12 @@ jobs:
           qt6-base-dev qt6-websockets-dev qt6-wayland qt6-qpa-plugins libgstreamer1.0-dev
           libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev libpipewire-0.3-dev
           gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
-          gstreamer1.0-tools gstreamer1.0-nice gstreamer1.0-pipewire gstreamer1.0-pulseaudio coturn pipewire-bin wireplumber
+          xvfb xauth libgl1-mesa-dri gstreamer1.0-tools gstreamer1.0-nice gstreamer1.0-pipewire gstreamer1.0-pulseaudio coturn pipewire-bin wireplumber
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2
       - run: ctest --test-dir build --output-on-failure
         env:
           QT_QPA_PLATFORM: offscreen
+      - run: xvfb-run -a env QT_QPA_PLATFORM=xcb build/media-modules-test --require-gl
       - run: python3 server/tests/relay_local.py
       - run: |
           if wireplumber --help | grep -q -- '--profile'; then
@@ -29,13 +30,21 @@ jobs:
           fi
       - run: python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt && .venv/bin/python -m unittest discover -s server/tests -v
       - run: .venv/bin/python server/tests/automatic_relay.py
-      - run: .venv/bin/python server/tests/session_local.py --four-viewers
+      - run: |
+          .venv/bin/python server/tests/session_local.py --four-viewers
+          .venv/bin/python server/tests/session_local.py --four-viewers --encoder-fallback
       - run: .venv/bin/python server/tests/local_tls.py
       - run: python3 packaging/linux/bundle.py
       - run: |
           curl -fL https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -o /tmp/appimagetool
           chmod +x /tmp/appimagetool
           ARCH=x86_64 /tmp/appimagetool --appimage-extract-and-run dist/LazarusShare.AppDir dist/LazarusShare-x86_64.AppImage
+      - name: Test portable Linux startup
+        run: |
+          dist/LazarusShare-x86_64.AppImage --appimage-extract-and-run --check-runtime
+          dist/LazarusShare-x86_64.AppImage --appimage-extract-and-run --smoke-test
+        env:
+          QT_QPA_PLATFORM: offscreen
       - uses: actions/upload-artifact@v4
         with:
           name: LazarusShare-Linux
@@ -58,7 +67,9 @@ jobs:
             mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad
             mingw-w64-x86_64-libnice mingw-w64-x86_64-python mingw-w64-x86_64-openssl
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
-      - run: ctest --test-dir build -R "protocol|profile" --output-on-failure
+      - run: ctest --test-dir build -R "protocol|profile|media-modules" --output-on-failure
+        env:
+          QT_QPA_PLATFORM: offscreen
       - run: python packaging/windows/test_tls.py
       - run: python packaging/windows/bundle.py
       - name: Test portable Windows startup without development runtime
