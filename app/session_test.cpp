@@ -10,10 +10,13 @@
 #include <algorithm>
 #include <memory>
 #include <vector>
+struct PeerTestAccess {
+    static void failEncoder(Peer &peer){auto *failure=g_error_new_literal(GST_STREAM_ERROR,GST_STREAM_ERROR_ENCODE,"Controlled encoder failure");auto *bus=gst_element_get_bus(peer.pipeline_);gst_bus_post(bus,gst_message_new_error(GST_OBJECT(peer.encoder_),failure,nullptr));g_error_free(failure);gst_object_unref(bus);}
+};
 struct WindowTestAccess {
     struct Snapshot {QString id;int generation,transport;Peer *media;};
     static std::vector<Snapshot> snapshots(Window &w){std::vector<Snapshot> result;for(auto &[id,c]:w.peers_)result.push_back({id,c->generation,c->transport,c->media.get()});return result;}
-    static void fail(Window &w,const Snapshot &s){auto &c=*w.peers_.at(s.id);c.software=false;w.mediaFailure(s.id,s.generation,"encoder_error");}
+    static void fail(Window &w,const Snapshot &s){auto &c=*w.peers_.at(s.id);c.software=false;PeerTestAccess::failEncoder(*c.media);}
     static bool recovered(Window &w,const std::vector<Snapshot> &saved){
         for(size_t i=0;i<saved.size();++i){auto &before=saved[i];auto &c=*w.peers_.at(before.id);
             if(c.transport!=before.transport || c.relayRequested)return false;
@@ -36,7 +39,8 @@ static void share(Window &window, int preset = 0) {
         if (!dialog) return;
         auto combos = dialog->findChildren<QComboBox *>(); combos.last()->setCurrentIndex(preset); dialog->accept();
     });
-    button(window, "Compartilhar tela")->click();
+    auto *start=button(window,"Compartilhar tela");
+    (start->isEnabled()?start:button(window,"Monitor / qualidade"))->click();
 }
 int main(int argc, char **argv) {
     gst_init(&argc, &argv); QApplication app(argc, argv); QTemporaryDir state;
@@ -56,6 +60,7 @@ int main(int argc, char **argv) {
     if(automatic || denial) { WindowTestAccess::block(host,transport-1); for(auto &g:guests)WindowTestAccess::block(*g,transport-1); }
     host.findChild<QCheckBox *>()->setChecked(true); button(host,"Criar sala")->click();
     QTimer timer; QElapsedTimer elapsed; elapsed.start(); timer.setInterval(20); int stage=0; qint64 approvedAt=0; bool passed=false;std::vector<WindowTestAccess::Snapshot> saved;
+    QObject::connect(host.findChild<Capture *>(),&Capture::error,&app,[&](QString){std::cerr<<"Capture failed at stage "<<stage<<'\n';app.quit();});
     QObject::connect(&timer,&QTimer::timeout,&app,[&] {
         if(automatic || denial)WindowTestAccess::expire(host);
         if(denial && stage==3 && WindowTestAccess::denied(host)) { passed=true; app.quit(); return; }
@@ -71,10 +76,13 @@ int main(int argc, char **argv) {
             if(std::any_of(guests.begin(),guests.end(),[](auto &g) { return !g->template findChild<QLabel *>("video")->pixmap().isNull(); })) { std::cerr<<"Room captured without consent\n"; app.quit(); return; }
             share(host,0); ++stage;
         } else if(stage==3 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return !g->template findChild<QLabel *>("video")->pixmap().isNull(); })) {
-            if(app.arguments().contains("--encoder-fallback")){saved=WindowTestAccess::snapshots(host);WindowTestAccess::fail(host,saved.front());stage=13;}
+            if(app.arguments().contains("--quality-live")){share(host,1);stage=14;}
+            else if(app.arguments().contains("--encoder-fallback")){saved=WindowTestAccess::snapshots(host);WindowTestAccess::fail(host,saved.front());stage=13;}
             else {button(host,"Parar compartilhamento")->click();++stage;}
         } else if(stage==13 && WindowTestAccess::recovered(host,saved)){
             if(!WindowTestAccess::terminal(host,saved.front())){std::cerr<<"Fallback was not bounded or stale callback was accepted\n";app.quit();return;}
+            share(host,1);stage=14;
+        } else if(stage==14 && std::all_of(guests.begin(),guests.end(),[](auto &g){return g->template findChild<QLabel *>("metrics")->text().contains("1920×1080");})){
             button(host,"Parar compartilhamento")->click();stage=4;
         } else if(stage==4 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return g->template findChild<QLabel *>("video")->pixmap().isNull(); })) {
             if(host.findChild<QLineEdit *>("invite")->text().size()!=26 || button(host,"Criar sala")->isEnabled()) { app.quit(); return; }

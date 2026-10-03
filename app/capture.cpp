@@ -88,14 +88,21 @@ void Capture::start(int monitor, Quality quality, bool testPattern) {
 #endif
 }
 void Capture::quality(Quality quality) {
+    const auto previousSize=dimensions_;const int previousFps=quality_.fps;
     quality_ = quality;
     QSize fit = sourceSize_;
     if (fit.width() > quality.width || fit.height() > quality.height) fit.scale(QSize(quality.width, quality.height), Qt::KeepAspectRatio);
     dimensions_ = QSize(qMax(2, fit.width() & ~1), qMax(2, fit.height() & ~1));
     if (filter_) {
+        GstState state=GST_STATE_NULL;if(pipeline_)gst_element_get_state(pipeline_,&state,nullptr,0);
+        // Flush negotiated source/rate caps before changing resolution or FPS.
+        // Updating a live capsfilter alone can retain the previous input rate.
+        bool resume=state>=GST_STATE_PAUSED && (previousSize!=dimensions_ || previousFps!=quality.fps);
+        if(resume && gst_element_set_state(pipeline_,GST_STATE_READY)==GST_STATE_CHANGE_FAILURE){emit error("Não foi possível preparar a alteração da captura.");return;}
         auto *caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, rawFormat_.toUtf8().constData(), "width", G_TYPE_INT, dimensions_.width(),
             "height", G_TYPE_INT, dimensions_.height(), "framerate", GST_TYPE_FRACTION, quality.fps, 1, nullptr);
         g_object_set(filter_, "caps", caps, nullptr); gst_caps_unref(caps);
+        if(resume && gst_element_set_state(pipeline_,GST_STATE_PLAYING)==GST_STATE_CHANGE_FAILURE)emit error("Não foi possível retomar a captura com essa qualidade.");
     }
 }
 void Capture::launch(const QString &source) {

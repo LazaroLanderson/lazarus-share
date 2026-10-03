@@ -20,10 +20,11 @@ A 0.2.1 correlaciona estatísticas pelo SSRC de vídeo, inclusive quando GStream
 
 ## Executar
 
-Após compilar os dois executáveis de benchmark com as mesmas dependências:
+Compile `media-benchmark` na versão atual. O helper abaixo extrai apenas Peer/Encoder do commit publicado e compila a referência com o mesmo fixture e dependências. Precisa desse commit no histórico local; não altera o checkout atual. Use um diretório vazio fora do repositório:
 
 ```sh
-python3 scripts/benchmark-media.py --baseline /caminho/0.2.0/media-benchmark
+python3 scripts/build-benchmark-baseline.py --output /tmp/lazarus-baseline
+python3 scripts/benchmark-media.py --baseline /tmp/lazarus-baseline/build/media-benchmark
 ```
 
 O arquivo `dist/benchmarks/0.2.1.jsonl` guarda resultados agregados e hashes dos binários, sem PIDs, caminhos pessoais, IPs, SDP, credenciais ou frames. Pode retomar uma execução interrompida. Os logs do app continuam sujeitos à política de 7 dias/10 MB; este arquivo é um artefato de teste exportado deliberadamente.

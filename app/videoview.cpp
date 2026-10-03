@@ -46,7 +46,8 @@ VideoView::VideoView(QWidget *parent):QLabel(parent){
 }
 void VideoView::setFrame(QImage image){
     if(image.isNull())return;image_=std::move(image);
-    if(gpu_ && !gpuFailed_){QLabel::setPixmap({});gpu_->setGeometry(rect());gpu_->frame(image_);gpu_->show();}else {QLabel::setPixmap(QPixmap::fromImage(image_));update();}
+    if(gpu_ && !gpuFailed_){QLabel::setPixmap({});gpu_->setGeometry(rect());gpu_->frame(image_);gpu_->show();
+        if(!glCheckScheduled_){glCheckScheduled_=true;QTimer::singleShot(100,this,[this]{if(gpu_ && !gpu_->isValid()){gpuFailed_=true;gpu_->hide();QLabel::setPixmap(QPixmap::fromImage(image_));update();}});}}else {QLabel::setPixmap(QPixmap::fromImage(image_));update();}
 }
 void VideoView::clearFrame(QString message){image_={};QLabel::setPixmap({});setText(message);if(gpu_){gpu_->frame({});gpu_->hide();}update();}
 QString VideoView::backend()const{return gpu_ && !gpuFailed_?"OpenGL":"Software";}

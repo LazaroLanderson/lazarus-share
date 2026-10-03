@@ -18,6 +18,7 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
     check(rate.update(.05,650,true)==6800,"One severe loss interval");
     int held=rate.value();for(int i=0;i<8;++i)check(rate.update(0,0,false)==held,"Missing feedback changed bitrate");
     for(int i=0;i<3;++i)rate.update(0,650,true);check(rate.value()>held,"Healthy recovery");
+    rate.reset(8000);rate.update(.025,30,true);rate.update(0,0,false);check(rate.update(.025,30,true)==8000,"Absent feedback joined nonconsecutive loss samples");
     rate.reset(8000);rate.update(.025,30,true);check(rate.value()==8000,"Premature moderate loss reduction");check(rate.update(.025,30,true)==6800,"Sustained moderate loss");
     rate.reset(8000);for(int i=0;i<5;++i)rate.update(0,40,true);for(int i=0;i<7;++i)rate.update(0,300,true);check(rate.value()<8000,"RTT growth ignored");
     for(int i=0;i<80;++i)rate.update(.2,300,true);check(rate.value()==300,"Bitrate floor");rate.target(200);check(rate.value()==200,"Low target ceiling");
@@ -35,9 +36,9 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
     GstVideoInfo actual;check(gst_video_info_from_caps(&actual,gst_sample_get_caps(converted)),"Converted caps invalid");check(actual.width==1280 && actual.height==720 && GST_VIDEO_INFO_FORMAT(&actual)==GST_VIDEO_FORMAT_NV12,"Converted shape");check(GST_BUFFER_PTS(gst_sample_get_buffer(converted))==123,"Frame timestamp mismatch");
     GstVideoFrame frame;check(gst_video_frame_map(&frame,&actual,gst_sample_get_buffer(converted),GST_MAP_READ),"Converted map");check(static_cast<unsigned char *>(GST_VIDEO_FRAME_PLANE_DATA(&frame,0))[0]==128,"Conversion changed pixels");gst_video_frame_unmap(&frame);
     gst_sample_unref(converted);converted=nullptr;
-    std::vector<GstSample *> held;for(int i=0;i<8;++i){auto *item=prepare.nv12(sample);check(item,"Pool exhausted too early");held.push_back(item);}
+    std::vector<GstSample *> heldBuffers;for(int i=0;i<8;++i){auto *item=prepare.nv12(sample);check(item,"Pool exhausted too early");heldBuffers.push_back(item);}
     check(!prepare.nv12(sample),"Pool grew beyond eight buffers");
-    for(auto *item:held)gst_sample_unref(item);converted=prepare.nv12(sample);check(converted,"Pool did not recover released buffers");
+    for(auto *item:heldBuffers)gst_sample_unref(item);converted=prepare.nv12(sample);check(converted,"Pool did not recover released buffers");
     gst_sample_unref(converted);gst_sample_unref(sample);gst_buffer_unref(buffer);gst_caps_unref(caps);
     VideoView view;view.resize(640,360);QImage picture(1280,720,QImage::Format_RGB888);picture.fill(QColor(12,34,56));view.setFrame(picture);view.show();app.processEvents();check(view.hasFrame(),"Render frame lost");auto rendered=view.grab().toImage();check(rendered.pixelColor(rendered.width()/2,rendered.height()/2)==QColor(12,34,56),"Rendered pixel integrity");if(app.arguments().contains("--require-gl"))check(view.backend()=="OpenGL","OpenGL path unavailable");view.clearFrame("Stopped");check(!view.hasFrame(),"Stop retained frame");
     auto cpu=selectVideoEncoder(30,3000,1280,720,true);check(cpu.factory=="vp8enc" && cpu.codec=="VP8","Software selection");

@@ -5,6 +5,9 @@
 #include <iostream>
 #include <gst/video/video.h>
 #include <cmath>
+struct PeerTestAccess {
+    static void dropEncoderInput(Peer &peer){auto *pad=gst_element_get_static_pad(peer.encoder_,"sink");gst_pad_add_probe(pad,GST_PAD_PROBE_TYPE_BUFFER,[](GstPad *,GstPadProbeInfo *,gpointer){return GST_PAD_PROBE_DROP;},nullptr,nullptr);gst_object_unref(pad);}
+};
 int main(int argc, char **argv) {
     gst_init(&argc, &argv); QCoreApplication app(argc, argv);
     if(app.arguments().contains("--encoder-creation-failure")) {
@@ -14,6 +17,7 @@ int main(int argc, char **argv) {
         if(peer.start(Quality{}, {}, {}, broken) || classified!="encoder_start")return 1;
         std::cout<<"Encoder creation failure classified separately from transport\n";return 0;
     }
+    bool stall=app.arguments().contains("--encoder-stall"),blocked=false;int stalls=0;
     bool stress = app.arguments().contains("--stress-quality");
     Peer host(true), guest(false); Quality q = stress ? Quality{1920,1080,60,8000} : Quality{640,360,30,1200};
     auto key = Protocol::randomBytes(16);
@@ -21,6 +25,7 @@ int main(int argc, char **argv) {
     QObject::connect(&host, &Peer::outgoing, &guest, [&](QJsonObject message) { QJsonObject decoded; if (g.open(h.seal(message), decoded)) guest.receive(decoded); });
     QObject::connect(&guest, &Peer::outgoing, &host, [&](QJsonObject message) { QJsonObject decoded; if (h.open(g.seal(message), decoded)) host.receive(decoded); });
     bool failed = false; auto error = [&](QString e) { std::cerr << e.toStdString() << '\n'; failed = true; app.quit(); };
+    QObject::connect(&host,&Peer::mediaFailure,&app,[&](QString code){if(stall && code=="encoder_stall")++stalls;else failed=true;app.quit();});
     QString route;
     QObject::connect(&host, &Peer::metrics, &app, [&](QJsonObject v) { route = v["route"].toString(); });
     QObject::connect(&host, &Peer::error, &app, error); QObject::connect(&guest, &Peer::error, &app, error);
@@ -60,13 +65,15 @@ int main(int argc, char **argv) {
                 }
                 double error = sum / count; maxError = std::max(maxError,error); if (error > 10) ++badFrames;
             }
-            ++frames; if (!stress && frames >= 90) app.quit();
+            ++frames; if (!stress && !stall && frames >= 90) app.quit();
+            if(stall && !blocked && frames>=15 && host.connected()){blocked=true;PeerTestAccess::dropEncoderInput(host);}
         }
         if (stress && elapsed.elapsed() >= 8000) app.quit();
         if (elapsed.elapsed() > 20000) { failed = true; app.quit(); }
     }); timer.start(); app.exec();
     gst_element_set_state(source, GST_STATE_NULL); gst_object_unref(sink); gst_object_unref(reference); gst_object_unref(source);
     gst_element_set_state(silence, GST_STATE_NULL); gst_object_unref(audio); gst_object_unref(silence);
+    if(stall){if(failed || stalls!=1 || !blocked || !host.connected() || route!="P2P direto")return 1;std::cout<<"Active encoder stall classified once without transport failure\n";return 0;}
     if (stress) std::cout << "1080p/60 pixel integrity: frames=" << frames << " bad=" << badFrames << " max RGB error=" << maxError << '\n';
     if (stress && (frames < 60 || badFrames > 1)) failed = true;
     if (failed || frames < (stress ? 60 : 90) || !host.connected() || !guest.connected() || route != (turns.isEmpty() ? "P2P direto" : "Relay criptografado")) return 1;

@@ -38,6 +38,9 @@ signals:
     void transportError();
     void mediaFailure(QString code);
 private:
+#ifdef LAZARUS_TESTING
+    friend struct PeerTestAccess;
+#endif
     static void offerNeeded(GstElement *, gpointer);
     static void descriptionCreated(GstPromise *, gpointer);
     static void iceCandidate(GstElement *, guint, gchar *, gpointer);

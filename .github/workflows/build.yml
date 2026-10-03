@@ -33,6 +33,7 @@ jobs:
       - run: |
           .venv/bin/python server/tests/session_local.py --four-viewers
           .venv/bin/python server/tests/session_local.py --four-viewers --encoder-fallback
+          LAZARUS_VIDEO_ENCODER=vp8 .venv/bin/python server/tests/session_local.py --quality-live
       - run: .venv/bin/python server/tests/local_tls.py
       - run: python3 packaging/linux/bundle.py
       - run: |

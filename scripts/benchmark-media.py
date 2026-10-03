@@ -48,7 +48,10 @@ def process(pid):
 def summarize(rows):
     if not rows:return None
     keys=set().union(*(r.keys() for r in rows))
-    return {key:statistics.mean([r[key] for r in rows if r.get(key) is not None]) for key in keys if any(r.get(key) is not None for r in rows)}
+    result={key:statistics.mean([r[key] for r in rows if r.get(key) is not None]) for key in keys if any(r.get(key) is not None for r in rows)}
+    result['rss_peak_mib']=max(r['rss_mib'] for r in rows)
+    result['rss_change_mib']=rows[-1]['rss_mib']-rows[0]['rss_mib']
+    return result
 def percentile(values,fraction):
     values=sorted(values);return values[min(len(values)-1,int(math.ceil(len(values)*fraction))-1)] if values else None
 
@@ -57,7 +60,7 @@ def run(binary,preset,count,backend,repeat):
     env=os.environ|{'GST_DEBUG':'0','QT_QPA_PLATFORM':'offscreen','LAZARUS_RENDERER':'software'}
     if backend=='software':env['LAZARUS_VIDEO_ENCODER']='vp8'
     else:env.pop('LAZARUS_VIDEO_ENCODER',None)
-    command=[str(Path(binary).resolve()),f'--width={width}',f'--height={height}',f'--fps={fps}',f'--kbps={kbps}',f'--viewers={count}',f'--seconds={a.warmup+a.duration+2}']
+    command=[str(Path(binary).resolve()),f'--width={width}',f'--height={height}',f'--fps={fps}',f'--kbps={kbps}',f'--viewers={count}',f'--seconds={a.warmup+a.duration+2}',f'--warmup={a.warmup}',f'--measurement={a.duration}']
     child=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True)
     watchdog=threading.Timer(a.warmup+a.duration+60,child.kill);watchdog.start()
     records=[];stats=[];pids=[];previous={};latency=[[] for _ in range(count)];readers=[[] for _ in range(count+1)]
@@ -67,10 +70,12 @@ def run(binary,preset,count,backend,repeat):
             if value.get('event')=='processes':
                 pids=[int(value['host_pid'])]+[int(x) for x in value['viewers']]
                 previous={pid:process(pid) for pid in pids};continue
+            if value.get('event')=='measurement_started':
+                previous={pid:process(pid) for pid in pids};records=[value];continue
             if value.get('event')!='sample':continue
             previous_ms=records[-1]['elapsed_ms'] if records else 0
             value['capture_fps']=value['captured']*1000/max(1,value['elapsed_ms']-previous_ms);records.append(value)
-            measuring=a.warmup*1000<=value['elapsed_ms']<(a.warmup+a.duration)*1000
+            measuring=True
             for index,pid in enumerate(pids):
                 current=process(pid);old=previous.get(pid);previous[pid]=current
                 if measuring and current and old:
@@ -92,6 +97,8 @@ def run(binary,preset,count,backend,repeat):
         values=[sample['connections'][index] for sample in stats]
         encoders={v['encoded'].get('encoder','') for v in values}
         streams.append({'encoder':sorted(encoders),'encoded_fps':statistics.mean([v['encoded'].get('video_fps',0) for v in values]) if values else 0,'decoded_fps':statistics.mean([v['decoded'].get('video_fps',0) for v in values]) if values else 0,'video_kbps':statistics.mean([v['encoded'].get('kbps',0) for v in values]) if values else 0,'discarded_frames_per_sample':statistics.mean([v['encoded'].get('frames_discarded',0) for v in values]) if values else None,'latency_p50_ms':percentile(latency[index],.5),'latency_p95_ms':percentile(latency[index],.95),'identified_frames':len(latency[index])})
+    result['measured_elapsed_s']=(records[-1]['elapsed_ms']-records[0]['elapsed_ms'])/1000 if records else 0
+    result['window_aligned']=True
     result['binary_sha256']=hashlib.sha256(Path(binary).read_bytes()).hexdigest()
     result['captured_fps']=statistics.mean([s['capture_fps'] for s in stats]) if stats else 0
     result['streams']=streams
@@ -101,7 +108,10 @@ def run(binary,preset,count,backend,repeat):
 existing=set()
 if output.exists():
     for line in output.read_text().splitlines():
-        r=json.loads(line);existing.add((r['preset'],r['viewers'],r['requested_backend'],r['repeat'],r['version']))
+        r=json.loads(line)
+        binary=a.baseline if r['version']=='baseline' else a.current
+        if r.get('window_aligned') and r.get('binary_sha256')==hashlib.sha256(Path(binary).read_bytes()).hexdigest() and r.get('warmup_s')==a.warmup and r.get('measurement_s')==a.duration and r.get('exit_code')==0 and all(s['identified_frames'] for s in r['streams']):
+            existing.add((r['preset'],r['viewers'],r['requested_backend'],r['repeat'],r['version']))
 scenarios=list(itertools.product(a.presets.split(','),map(int,a.viewers.split(',')),a.backends.split(','),range(1,a.repeats+1)))
 for index,(preset,count,backend,repeat) in enumerate(scenarios,1):
     # Alternate versions so thermal/time-of-day effects do not align with one version.

@@ -269,7 +269,7 @@ void Window::message(const QJsonObject &m) {
             auto p = body["profile"].toObject(); auto name = normalizedNickname(p["nickname"].toString());
             if (!name.isEmpty()) { c.nickname = name; c.avatar = qBound(0,p["avatar"].toInt(),9); row(id, "Perfil atualizado"); log("profile_updated", id); }
         } else if (kind == "sharing" && !host_) {
-            if (!body["enabled"].toBool()) { c.media.reset(); c.kbps = 0; video_->clearFrame("Host não está compartilhando."); metrics_->setText("Aguardando compartilhamento"); }
+            if (!body["enabled"].toBool()) { ++c.selection;c.selecting=false;c.media.reset(); c.kbps = 0; video_->clearFrame("Host não está compartilhando."); metrics_->setText("Aguardando compartilhamento"); }
         } else if (kind == "relay-request" && !host_) {
             if (c.localConsent && c.remoteConsent) send({{"type", "relay"}, {"peer", id}, {"enabled", true}});
         } else if (kind == "connection-failure" && host_ && sharing_ && generation == c.generation && !c.fatalMedia) {
@@ -318,16 +318,17 @@ void Window::startPeer(const QString &id) {
     if(!host_){attachPeer(id,{},generation);return;}
     c.selecting=true;int selection=++c.selection;auto q=quality();auto dimensions=capture_.dimensions();if(dimensions.isValid()){q.width=dimensions.width();q.height=dimensions.height();}
     if(c.encoderWidth!=q.width || c.encoderHeight!=q.height || c.encoderFps!=q.fps){c.software=false;c.encoderWidth=q.width;c.encoderHeight=q.height;c.encoderFps=q.fps;}
-    bool software=c.software;auto *watcher=new QFutureWatcher<VideoEncoder>(this);
-    connect(watcher,&QFutureWatcher<VideoEncoder>::finished,this,[this,id,generation,selection,watcher]{
+    bool software=c.software;qint64 selectionStarted=time_.elapsed();auto *watcher=new QFutureWatcher<VideoEncoder>(this);
+    connect(watcher,&QFutureWatcher<VideoEncoder>::finished,this,[this,id,generation,selection,selectionStarted,watcher]{
         auto backend=watcher->result();watcher->deleteLater();auto it=peers_.find(id);
         if(it==peers_.end() || it->second->generation!=generation || it->second->selection!=selection || !sharing_)return;
-        it->second->selecting=false;attachPeer(id,backend,generation);
+        log("encoder_validation",id,{{"encoder",backend.name},{"selection_ms",double(time_.elapsed()-selectionStarted)}});it->second->selecting=false;attachPeer(id,backend,generation);
     });
     watcher->setFuture(QtConcurrent::run([q,software]{return selectVideoEncoder(q.fps,q.kbps,q.width,q.height,software);}));
 }
 void Window::attachPeer(const QString &id,VideoEncoder backend,int generation){
     auto it=peers_.find(id);if(it==peers_.end() || it->second->generation!=generation)return;auto &c=*it->second;
+    if(c.transport>=0 && (!c.localConsent || !c.remoteConsent)){c.selecting=false;c.exhausted=true;return;}
     if(host_ && backend.chain.isEmpty()){mediaFailure(id,generation,"software_unavailable");return;}
     c.started=time_.elapsed();c.media=std::make_unique<Peer>(host_);
     connect(c.media.get(), &Peer::outgoing, this, [this, id, generation](QJsonObject body) { auto it=peers_.find(id); if(it!=peers_.end() && it->second->generation == generation) signal(id, body); });
@@ -345,7 +346,11 @@ void Window::attachPeer(const QString &id,VideoEncoder backend,int generation){
         auto it = peers_.find(id); if (it == peers_.end() || it->second->generation != generation) return;
         auto &c = *it->second; c.kbps = values["kbps"].toDouble(); c.route = values["route"].toString();
         c.metrics = values; if (c.media && c.media->connected() && c.route != "Verificando") c.lastRoute = c.route; log("connection_metrics", id, {{"render_backend",video_->backend()},{"metrics", values}});
-        if (!c.fatalMedia) row(id, QString("%1 | %2 kbps | perda %3% | RTT %4 ms | vídeo %5 FPS").arg(c.route).arg(c.kbps,0,'f',0).arg(values["loss_percent"].toDouble(),0,'f',1).arg(values["rtt_ms"].toDouble(),0,'f',0).arg(values["video_fps"].toDouble(),0,'f',1));
+        if (!c.fatalMedia) {
+            auto summary=QString("%1 | %2 kbps | perda %3% | RTT %4 ms | vídeo %5 FPS").arg(c.route).arg(c.kbps,0,'f',0).arg(values["loss_percent"].toDouble(),0,'f',1).arg(values["rtt_ms"].toDouble(),0,'f',0).arg(values["video_fps"].toDouble(),0,'f',1);
+            if(host_ && c.software && c.media && c.media->connected() && time_.elapsed()-c.started>5000 && values["video_fps"].toDouble()<c.encoderFps*.95)summary+=QString(" | Software abaixo do alvo de %1 FPS").arg(c.encoderFps);
+            row(id,summary);
+        }
     });
     connect(c.media.get(),&Peer::mediaFailure,this,[this,id,generation](QString code){QTimer::singleShot(0,this,[this,id,generation,code]{mediaFailure(id,generation,code);});});
     auto q=quality();auto dimensions=capture_.dimensions();if(host_ && dimensions.isValid()){q.width=dimensions.width();q.height=dimensions.height();}
@@ -357,6 +362,8 @@ void Window::attachPeer(const QString &id,VideoEncoder backend,int generation){
 }
 void Window::mediaFailure(const QString &id,int generation,const QString &code){
     auto it=peers_.find(id);if(it==peers_.end() || it->second->generation!=generation)return;auto &c=*it->second;
+    if(!c.media && !c.selecting && code!="software_unavailable")return;
+    if(c.transport>=0 && (!c.localConsent || !c.remoteConsent))return;
     log("media_error",id,{{"error_code",code}});
     bool recoverable=code=="encoder_error" || code=="encoder_start" || code=="encoder_stall";
     if(host_ && sharing_ && recoverable && !c.software){
@@ -487,7 +494,7 @@ void Window::share() {
 void Window::stopSharing() {
     bool previous = sharing_ || capturePending_; sharing_ = capturePending_ = false;
     capture_.stop(); audio_.stop();
-    if (host_) for (auto &[id,c] : peers_) { if (!c->session.isEmpty()) signal(id, {{"kind","sharing"},{"enabled",false}}); c->media.reset(); c->kbps = 0; c->exhausted = false; }
+    if (host_) for (auto &[id,c] : peers_) { if (!c->session.isEmpty()) signal(id, {{"kind","sharing"},{"enabled",false}}); ++c->generation;++c->selection;c->selecting=false;c->media.reset(); c->kbps = 0; c->exhausted = false; }
     share_->setEnabled(active_ && host_ && created_); pause_->setEnabled(false); change_->setEnabled(false); refreshAudio();
     if (previous) { log("sharing_stopped"); metrics_->setText("Sem compartilhamento | upload 0 kbps"); notice("Compartilhamento parado. A sala continua aberta."); }
 }

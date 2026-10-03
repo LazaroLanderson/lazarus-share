@@ -15,5 +15,5 @@ private:
     friend class TextureView;
     QImage image_;
     TextureView *gpu_=nullptr;
-    bool gpuFailed_=false;
+    bool gpuFailed_=false,glCheckScheduled_=false;
 };

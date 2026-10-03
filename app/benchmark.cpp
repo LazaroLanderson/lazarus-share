@@ -37,7 +37,7 @@ static quint32 identify(const QImage &image){if(image.width()<64 || image.height
 }
 int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv);auto args=app.arguments();
  auto value=[&](QString key,int fallback){for(auto a:args)if(a.startsWith(key+'='))return a.section('=',1).toInt();return fallback;};
- int count=value("--viewers",1),seconds=value("--seconds",75);Quality q{value("--width",1920),value("--height",1080),value("--fps",60),value("--kbps",8000)};
+ int count=value("--viewers",1),seconds=value("--seconds",75),warmup=value("--warmup",15),measurement=value("--measurement",60);Quality q{value("--width",1920),value("--height",1080),value("--fps",60),value("--kbps",8000)};
  QString channel;for(auto a:args)if(a.startsWith("--viewer="))channel=a.section('=',1);
  if(!channel.isEmpty()){
   Peer peer(false);QLocalSocket socket;QByteArray pending;
@@ -45,6 +45,9 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
   QLabel display;display.setMinimumSize(640,360);
 #else
   VideoView display;display.setMinimumSize(640,360);
+#endif
+#ifndef LAZARUS_BASELINE
+  QObject::connect(&peer,&Peer::mediaFailure,&app,[&](QString){QTimer::singleShot(0,&app,[&]{app.exit(3);});});
 #endif
   display.show();QObject::connect(&peer,&Peer::outgoing,&app,[&](QJsonObject message){send(&socket,message);});
   QObject::connect(&socket,&QLocalSocket::readyRead,&app,[&]{read(&socket,[&](QJsonObject message){peer.receive(message);});});
@@ -58,7 +61,7 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
 #endif
    // Flush raster/GL presentation before acknowledging this synthetic frame.
    display.repaint();if(id)send(&socket,{{"fixture","presented"},{"frame",double(id)},{"presented_ms",double(mono())}});
-  });frames.start();QTimer::singleShot((seconds+15)*1000,&app,&QCoreApplication::quit);return app.exec();
+  });frames.start();QTimer::singleShot((seconds+15)*1000,Qt::PreciseTimer,&app,&QCoreApplication::quit);return app.exec();
  }
  QLocalServer server;server.setSocketOptions(QLocalServer::UserAccessOption);channel="lazarus-bench-"+QUuid::createUuid().toString(QUuid::Id128);if(!server.listen(channel))return 2;
  std::vector<std::unique_ptr<Peer>> peers;std::vector<std::unique_ptr<QProcess>> children;std::vector<QLocalSocket *> sockets;std::map<quint32,qint64> produced;
@@ -68,6 +71,9 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
   auto peer=std::make_unique<Peer>(true);auto *raw=peer.get();
   QObject::connect(raw,&Peer::outgoing,&app,[socket](QJsonObject message){send(socket,message);});
   QObject::connect(raw,&Peer::metrics,&app,[&,index](QJsonObject m){hostMetrics[index]=m;});
+#ifndef LAZARUS_BASELINE
+  QObject::connect(raw,&Peer::mediaFailure,&app,[&](QString){failed=true;QTimer::singleShot(0,&app,&QCoreApplication::quit);});
+#endif
   QObject::connect(raw,&Peer::error,&app,[&](QString){failed=true;});
   QObject::connect(socket,&QLocalSocket::readyRead,&app,[&,socket,index,raw]{read(socket,[&,index,raw](QJsonObject message){
    QString fixture=message["fixture"].toString();if(fixture=="metrics")viewerMetrics[index]=message["metrics"].toObject();
@@ -100,8 +106,10 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
   if(nv12)gst_sample_unref(nv12);
 #endif
   gst_sample_unref(sample);
- }});pump.start();QElapsedTimer elapsed;elapsed.start();QTimer report;report.setInterval(2000);
- QObject::connect(&report,&QTimer::timeout,&app,[&]{QJsonArray connections;for(int i=0;i<count;++i){QJsonArray delays;for(double d:latency[i])delays.append(d);latency[i].clear();connections.append(QJsonObject{{"encoded",hostMetrics[i]},{"decoded",viewerMetrics[i]},{"presentation_ms",delays}});}print({{"event","sample"},{"elapsed_ms",double(elapsed.elapsed())},{"captured",int(captured)},{"connections",connections}});captured=0;});report.start();
- QTimer::singleShot(seconds*1000,&app,&QCoreApplication::quit);app.exec();gst_element_set_state(source,GST_STATE_NULL);gst_object_unref(sink);gst_object_unref(source);peers.clear();for(auto &child:children){child->terminate();if(!child->waitForFinished(3000)){child->kill();child->waitForFinished();}}
+ }});pump.start();QElapsedTimer elapsed;elapsed.start();QTimer report;report.setInterval(2000);report.setTimerType(Qt::PreciseTimer);
+ QObject::connect(&report,&QTimer::timeout,&app,[&]{QJsonArray connections;for(int i=0;i<count;++i){QJsonArray delays;for(double d:latency[i])delays.append(d);latency[i].clear();connections.append(QJsonObject{{"encoded",hostMetrics[i]},{"decoded",viewerMetrics[i]},{"presentation_ms",delays}});}print({{"event","sample"},{"elapsed_ms",double(elapsed.elapsed())},{"captured",int(captured)},{"connections",connections}});captured=0;});
+ QTimer::singleShot(warmup*1000,Qt::PreciseTimer,&app,[&]{captured=0;for(auto &values:latency)values.clear();print({{"event","measurement_started"},{"elapsed_ms",double(elapsed.elapsed())}});report.start();});
+ QTimer::singleShot((warmup+measurement)*1000+500,Qt::PreciseTimer,&app,[&]{report.stop();});
+ QTimer::singleShot(seconds*1000,Qt::PreciseTimer,&app,&QCoreApplication::quit);app.exec();gst_element_set_state(source,GST_STATE_NULL);gst_object_unref(sink);gst_object_unref(source);peers.clear();for(auto &child:children){child->terminate();if(!child->waitForFinished(3000)){child->kill();child->waitForFinished();}}
  return failed || accepted!=count?1:0;
 }
