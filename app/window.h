@@ -50,7 +50,8 @@ private:
     QString selectedPeer() const;
     Quality quality() const;
     void notice(const QString &message);
-    QLineEdit *endpoint_, *stun_, *token_, *tlsPin_;
+    QLineEdit *token_;
+    QString endpoint_, stun_, tlsPin_;
     QComboBox *monitor_;
     QSpinBox *width_, *height_, *fps_, *bitrate_;
     QListWidget *viewers_, *apps_;

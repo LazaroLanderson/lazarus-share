@@ -20,15 +20,13 @@ Window::Window() : capture_(this), audio_(this) {
     setWindowTitle("Lazarus Share — sem login"); resize(940, 730); time_.start();
     auto *root = new QWidget(this); auto *layout = new QVBoxLayout(root); setCentralWidget(root);
     auto *form = new QFormLayout;
-    endpoint_ = new QLineEdit(qEnvironmentVariable("LAZARUS_SIGNAL_URL", "ws://127.0.0.1:8080/ws"));
-    stun_ = new QLineEdit(qEnvironmentVariable("LAZARUS_STUN_URL"));
-    tlsPin_ = new QLineEdit(qEnvironmentVariable("LAZARUS_TLS_PIN"));
-    tlsPin_->setObjectName("tlsPin");
-    tlsPin_->setPlaceholderText("Opcional: copie a impressão SHA-256 do servidor local");
+    const QString hostedEndpoint = "wss://129.148.20.150/ws";
+    endpoint_ = qEnvironmentVariable("LAZARUS_SIGNAL_URL", hostedEndpoint).trimmed();
+    const bool hosted = endpoint_ == hostedEndpoint;
+    stun_ = qEnvironmentVariable("LAZARUS_STUN_URL", hosted ? "stun://129.148.20.150:3478" : "");
+    tlsPin_ = qEnvironmentVariable("LAZARUS_TLS_PIN", hosted ? "d1122ddc85b603ada9c1882dbd41f6a5d4da8b9d07c660be2bc5f03c1ef13a24" : "");
     token_ = new QLineEdit; token_->setPlaceholderText("Token do convite (26 caracteres)");
-    endpoint_->setObjectName("endpoint"); token_->setObjectName("invite");
-    form->addRow("Servidor de salas", endpoint_); form->addRow("STUN próprio (stun://host:3478)", stun_);
-    form->addRow("Certificado local (SHA-256)", tlsPin_);
+    token_->setObjectName("invite");
     form->addRow("Convite", token_); layout->addLayout(form);
     auto *buttons = new QHBoxLayout;
     create_ = new QPushButton("Criar sala"); join_ = new QPushButton("Entrar com token"); stop_ = new QPushButton("Encerrar / sair");
@@ -86,7 +84,7 @@ Window::Window() : capture_(this), audio_(this) {
     connect(apps_, &QListWidget::itemChanged, this, [this] { selectAudio(); });
     connect(&socket_, &QWebSocket::connected, this, [this] {
         socketLost_ = -1; reconnects_ = 0;
-        auto pin = tlsPin_->text().trimmed().remove(':').remove(' ').toLower();
+        auto pin = tlsPin_.trimmed().remove(':').remove(' ').toLower();
         if (!pin.isEmpty() && socket_.sslConfiguration().peerCertificate().digest(QCryptographicHash::Sha256).toHex() != pin.toLatin1()) {
             stop(); notice("O certificado do servidor não corresponde à impressão informada. Conexão recusada."); return;
         }
@@ -95,9 +93,9 @@ Window::Window() : capture_(this), audio_(this) {
         if (host_) m["admin"] = admin_; send(m);
     });
     connect(&socket_, &QWebSocket::sslErrors, this, [this](const QList<QSslError> &errors) {
-        auto pin = tlsPin_->text().trimmed().remove(':').remove(' ').toLower();
+        auto pin = tlsPin_.trimmed().remove(':').remove(' ').toLower();
         if (pin.size() != 64 || socket_.sslConfiguration().peerCertificate().digest(QCryptographicHash::Sha256).toHex() != pin.toLatin1()) {
-            notice("Certificado TLS não confiável. Para o servidor local, copie sua impressão SHA-256."); return;
+            notice("Não foi possível verificar a identidade do serviço de salas. Verifique se está usando a versão atual do aplicativo."); return;
         }
         if (!acceptsPinnedTls(socket_.sslConfiguration().peerCertificate(), errors, pin)) {
             notice("Certificado local recusado: erro TLS além da confiança no certificado."); return;
@@ -112,7 +110,7 @@ Window::Window() : capture_(this), audio_(this) {
     });
     connect(&socket_, qOverload<QAbstractSocket::SocketError>(&QWebSocket::error), this, [this](QAbstractSocket::SocketError) {
         if (active_ && socketLost_ < 0) socketLost_ = time_.elapsed();
-        notice("Não foi possível conectar ao serviço de salas. Confira endereço e certificado TLS.");
+        notice("Não foi possível conectar ao serviço de salas. Confira sua conexão e tente novamente.");
     });
     frameTimer_.setTimerType(Qt::PreciseTimer); frameTimer_.setInterval(8); connect(&frameTimer_, &QTimer::timeout, this, &Window::tick); frameTimer_.start();
     maintenance_.setInterval(1000); connect(&maintenance_, &QTimer::timeout, this, [this] {
@@ -164,20 +162,19 @@ void Window::stop() {
     capture_.stop(); audio_.stop(); refreshAudio();
     secret_.fill(0); secret_.clear(); room_.clear(); admin_.clear(); viewerId_.clear(); token_->clear(); token_->setReadOnly(false);
     create_->setEnabled(true); join_->setEnabled(true); stop_->setEnabled(false);
-    endpoint_->setEnabled(true); stun_->setEnabled(true); tlsPin_->setEnabled(true);
     video_->setPixmap({}); video_->setText("Sessão encerrada."); metrics_->setText("Upload: 0 kbps"); notice("Sessão encerrada.");
 }
 void Window::openSocket() {
-    QUrl url(endpoint_->text().trimmed()); auto host = url.host();
+    QUrl url(endpoint_); auto host = url.host();
     bool loopback = host == "127.0.0.1" || host == "localhost" || host == "::1";
     if (!url.isValid() || url.path() != "/ws" || (url.scheme() != "wss" && !(url.scheme() == "ws" && loopback)) || !url.userInfo().isEmpty()) {
         stop(); notice("Use wss://servidor/ws. ws:// é permitido apenas em localhost para testes."); return;
     }
-    auto pin = tlsPin_->text().trimmed().remove(':').remove(' ').toLower();
+    auto pin = tlsPin_.trimmed().remove(':').remove(' ').toLower();
     if (!pin.isEmpty() && (url.scheme() != "wss" || pin.size() != 64 || QByteArray::fromHex(pin.toLatin1()).size() != 32 || QByteArray::fromHex(pin.toLatin1()).toHex() != pin.toLatin1())) {
         stop(); notice("Impressão inválida: use os 64 caracteres SHA-256 e um endereço wss://."); return;
     }
-    endpoint_->setEnabled(false); stun_->setEnabled(false); tlsPin_->setEnabled(false); socket_.open(url);
+    socket_.open(url);
 }
 void Window::send(QJsonObject m) {
     if (socket_.state() == QAbstractSocket::ConnectedState) socket_.sendTextMessage(QString::fromUtf8(QJsonDocument(m).toJson(QJsonDocument::Compact)));
@@ -264,7 +261,7 @@ void Window::startPeer(const QString &id) {
     });
     auto q = quality(); auto dimensions = capture_.dimensions();
     if (host_ && dimensions.isValid()) { q.width = dimensions.width(); q.height = dimensions.height(); }
-    if (!c.media->start(q, stun_->text().trimmed(), c.turns)) { c.media.reset(); c.failed = true; }
+    if (!c.media->start(q, stun_.trimmed(), c.turns)) { c.media.reset(); c.failed = true; }
 }
 void Window::relay() {
     auto id = selectedPeer(); auto it = peers_.find(id);
@@ -328,7 +325,7 @@ void Window::selectAudio() {
 void Window::diagnostics() {
     QJsonArray connections;
     for (auto &[id, c] : peers_) connections.append(QJsonObject{{"route", c->route}, {"metrics", c->metrics}, {"relay_local", c->localConsent}, {"relay_remote", c->remoteConsent}, {"failed", c->failed}});
-    QJsonObject report{{"version", "0.1.3"}, {"role", host_ ? "host" : "viewer"}, {"connections", connections},
+    QJsonObject report{{"version", "0.1.4"}, {"role", host_ ? "host" : "viewer"}, {"connections", connections},
         {"target_width", width_->value()}, {"target_height", height_->value()}, {"target_fps", fps_->value()}, {"target_kbps", bitrate_->value()}, {"audio_selective_available", audio_.supported()}};
     auto path = QFileDialog::getSaveFileName(this, "Exportar diagnóstico sem segredos", "diagnostico.json", "JSON (*.json)");
     if (path.isEmpty()) return; QFile file(path);

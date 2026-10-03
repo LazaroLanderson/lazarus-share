@@ -173,13 +173,23 @@ abaixo pelo seu IP:
 O serviço exibe o endereço WSS e a impressão SHA-256 do certificado. Mantenha
 essa janela do terminal aberta durante o teste. Para parar, pressione Ctrl+C.
 
-### 2. Configurar os dois clientes
+### 2. Configurar os dois clientes para o teste local
 
-| Campo | Valor |
-| --- | --- |
-| Servidor de salas | Endereço exibido pelo serviço, por exemplo `wss://192.168.1.25:8443/ws` |
-| Certificado local (SHA-256) | Os 64 caracteres da impressão exibida pelo serviço |
-| STUN próprio | Vazio para o primeiro teste na LAN |
+Os campos de servidor, STUN e certificado não aparecem na janela. Por padrão,
+o app conecta à VPS do projeto (`129.148.20.150`), com salas HTTPS e STUN próprios.
+O usuário final cria a sala ou insere o convite, sem configurar a conexão.
+
+Para um teste local de desenvolvimento, configure as variáveis antes de abrir:
+
+```sh
+LAZARUS_SIGNAL_URL='wss://192.168.1.25:8443/ws' \
+LAZARUS_TLS_PIN='IMPRESSAO_SHA256_EXIBIDA_PELO_SERVIDOR' \
+LAZARUS_STUN_URL='' ./LazarusShare-x86_64.AppImage
+```
+
+No Windows, configure as mesmas variáveis de ambiente antes de iniciar o EXE.
+A mudança de servidor desativa os padrões de certificado e STUN da VPS; eles
+precisam ser definidos explicitamente para esse teste.
 
 Copie a impressão diretamente da saída do seu servidor por um meio confiável.
 O app verifica aquele certificado específico, sem aceitar indiscriminadamente
@@ -302,7 +312,7 @@ Na versão atual, as credenciais TURN expiram após uma hora; uma nova sessão �
 necessária para renovar autorização e credenciais. O tráfego de relay precisa
 ser dimensionado e pago pelo operador.
 
-Configuração do cliente pela janela ou por variáveis de ambiente:
+Configuração de desenvolvimento por variáveis de ambiente (sem campos na janela):
 
 | Variável | Finalidade |
 | --- | --- |

@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     if (app.arguments().contains("--smoke-test")) QTimer::singleShot(500, &app, &QCoreApplication::quit);
     QCoreApplication::setApplicationName("Lazarus Share");
-    QCoreApplication::setApplicationVersion("0.1.3");
+    QCoreApplication::setApplicationVersion("0.1.4");
     int result;
     { Window window; window.show(); result = app.exec(); }
 #ifdef Q_OS_WIN

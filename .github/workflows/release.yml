@@ -60,13 +60,12 @@ jobs:
           test -s LazarusShare.exe
           test -s LazarusShare-x86_64.AppImage
           sha256sum LazarusShare.exe LazarusShare-x86_64.AppImage > SHA256SUMS
-          cat > notes.md <<EOF
-          Versão experimental $VERSION com HTTPS temporário pelo IP e confiança por impressão SHA-256 no cliente Windows.
-
-          - Pin correto aceito; pin substituído e SAN/IP incompatível recusados em testes reais do backend TLS Windows.
-          - Pacote Windows nativo com verificação de símbolos das DLLs e teste de abertura portátil.
-          - AppImage Linux e EXE Windows com bibliotecas incluídas.
-          - Deploy por IP com certificado temporário na VPS, sem depender de DNS. Relay continua dependendo de infraestrutura TURN própria.
+          if [[ -f "$GITHUB_WORKSPACE/docs/releases/$VERSION.md" ]]; then
+            cp "$GITHUB_WORKSPACE/docs/releases/$VERSION.md" notes.md
+          else
+            printf 'Versão experimental %s. AppImage Linux e EXE Windows portáteis.\n' "$VERSION" > notes.md
+          fi
+          cat >> notes.md <<EOF
 
           [Build e validação dos dois pacotes](https://github.com/$GITHUB_REPOSITORY/actions/runs/$RUN_ID).
           Fonte: $SOURCE_SHA. Captura real entre PCs, outras GPUs e aceitação na Dtel continuam dependendo de testes em equipamentos reais.

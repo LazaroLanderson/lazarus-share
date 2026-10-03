@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(LazarusShare VERSION 0.1.3 LANGUAGES CXX)
+project(LazarusShare VERSION 0.1.4 LANGUAGES CXX)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()

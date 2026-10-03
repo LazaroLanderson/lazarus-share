@@ -6,6 +6,10 @@ on:
         description: Add only stateful TCP 443 to the attached default security list
         type: boolean
         default: false
+      stun:
+        description: Also allow UDP 3478 for this VPS's STUN-only service
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -22,6 +26,7 @@ jobs:
           VPS_PORT: ${{ vars.VPS_PORT }}
           SIGNAL_HOST: ${{ vars.SIGNAL_HOST }}
           APPLY: ${{ inputs.apply }}
+          STUN: ${{ inputs.stun }}
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
         run: |
@@ -32,6 +37,7 @@ jobs:
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
           [[ "$SIGNAL_HOST" =~ ^[0-9.]+$ ]]
           [[ "$APPLY" == true || "$APPLY" == false ]]
+          [[ "$STUN" == true || "$STUN" == false ]]
           umask 077
           mkdir -p "$RUNNER_TEMP/lazarus-ssh"
           key="$RUNNER_TEMP/lazarus-ssh/key"
@@ -41,6 +47,7 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
           option=''
           if [[ "$APPLY" == true ]]; then option=--apply; fi
+          if [[ "$STUN" == true ]]; then option="$option --stun"; fi
           ssh -i "$key" -p "$VPS_PORT" -o ConnectTimeout=15 \
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$hosts" "$VPS_USER@$VPS_HOST" \

@@ -21,7 +21,7 @@ def plain(value):
 
 
 class Firewall(unittest.TestCase):
-    def execute(self, *, apply=False, etag='revision', allowed=False, public_ip='192.0.2.1'):
+    def execute(self, *, apply=False, etag='revision', allowed=False, public_ip='192.0.2.1', stun=False):
         rule = Obj(protocol='6', source='0.0.0.0/0', source_type='CIDR_BLOCK', is_stateless=False,
                    tcp_options=Obj(source_port_range=None, destination_port_range=Obj(min=443 if allowed else 22, max=443 if allowed else 22)))
         original = Obj(ingress_security_rules=[rule], egress_security_rules=[Obj(protocol='all', destination='0.0.0.0/0')])
@@ -38,11 +38,14 @@ class Firewall(unittest.TestCase):
         class ServiceError(Exception):
             pass
         models = Obj(IngressSecurityRule=Obj, TcpOptions=lambda **kw: Obj(source_port_range=None, **kw),
+                     UdpOptions=lambda **kw: Obj(source_port_range=None, **kw),
                      PortRange=Obj, UpdateSecurityListDetails=Obj)
         sdk = Obj(auth=Obj(signers=Obj(InstancePrincipalsSecurityTokenSigner=lambda: object())),
                   core=Obj(VirtualNetworkClient=lambda *a, **kw: client, models=models),
                   exceptions=Obj(ServiceError=ServiceError), util=Obj(to_dict=plain))
         argv = ['oracle_https', '--public-ip', '192.0.2.1'] + (['--apply'] if apply else [])
+        if stun:
+            argv.append('--stun')
         error = None
         with patch.dict('sys.modules', {'oci': sdk}), patch('sys.argv', argv), \
                 patch.object(module, 'metadata', return_value=[{'nicIndex': 0, 'vnicId': 'own-vnic'}]), \
@@ -70,6 +73,18 @@ class Firewall(unittest.TestCase):
 
     def test_existing_https_does_not_duplicate(self):
         self.assertEqual(self.execute(apply=True, allowed=True)[1], [])
+
+    def test_stun_adds_only_udp_3478_and_preserves_existing_https(self):
+        original, calls, error = self.execute(apply=True, allowed=True, stun=True)
+        self.assertIsNone(error)
+        self.assertEqual(len(calls), 1)
+        details = calls[0][1]
+        self.assertEqual(details.ingress_security_rules[:-1], original.ingress_security_rules)
+        rule = details.ingress_security_rules[-1]
+        self.assertEqual(rule.protocol, '17')
+        self.assertEqual(rule.udp_options.destination_port_range.min, 3478)
+        self.assertEqual(rule.udp_options.destination_port_range.max, 3478)
+        self.assertEqual(details.egress_security_rules, original.egress_security_rules)
 
     def test_missing_etag_or_wrong_vps_refuses_update(self):
         for kwargs in ({'etag': None}, {'public_ip': '192.0.2.2'}):

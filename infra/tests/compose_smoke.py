@@ -1,6 +1,8 @@
 """Check HTTPS and WebSocket upgrade through the actual Compose proxy in CI."""
 import asyncio
 import ssl
+import subprocess
+import sys
 from pathlib import Path
 from aiohttp import ClientSession
 
@@ -19,6 +21,7 @@ async def main():
             result = await asyncio.wait_for(ws.receive_json(), 5)
             assert result['type'] == 'created'
     print('Compose HTTPS health and WebSocket room creation passed')
+    subprocess.run([sys.executable, 'infra/stun_probe.py', '--host', '127.0.0.1'], check=True)
 
 
 asyncio.run(main())

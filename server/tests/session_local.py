@@ -10,6 +10,7 @@ import sys
 with socket.socket() as sock:
     sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]
 env = os.environ | {"PORT": str(port), "BIND": "127.0.0.1", "LAZARUS_SIGNAL_URL": f"ws://127.0.0.1:{port}/ws",
+                    "LAZARUS_TLS_PIN": "", "LAZARUS_STUN_URL": "",
                     "QT_QPA_PLATFORM": "offscreen", "PIPEWIRE_REMOTE": "lazarus-nonexistent-test", "GST_DEBUG": "0"}
 server = subprocess.Popen([sys.executable, "server/service.py"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:

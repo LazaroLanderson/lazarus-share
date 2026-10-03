@@ -16,26 +16,31 @@ def metadata(path):
 
 
 def permits_https(rule):
+    return permits_port(rule, '6', 443)
+
+
+def permits_port(rule, protocol, port):
     """Recognize public IPv4 access, including wider TCP port ranges."""
     if rule.source != '0.0.0.0/0' or rule.source_type != 'CIDR_BLOCK' or rule.is_stateless:
         return False
     if rule.protocol == 'all':
         return True
-    if rule.protocol != '6':
+    if rule.protocol != protocol:
         return False
-    options = rule.tcp_options
+    options = rule.tcp_options if protocol == '6' else rule.udp_options
     if options is None:
         return True
     if options.source_port_range is not None:
         return False
     ports = options.destination_port_range
-    return ports is None or ports.min <= 443 <= ports.max
+    return ports is None or ports.min <= port <= ports.max
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--public-ip', required=True)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--stun', action='store_true', help='Also check/allow only UDP 3478 for the VPS STUN service')
     args = parser.parse_args()
     import oci
 
@@ -62,7 +67,11 @@ def main():
         allowed = any(permits_https(rule) for response in lists.values()
                       for rule in response.data.ingress_security_rules)
         print('Existing public stateful TCP 443 rule:', allowed)
-        if allowed or not args.apply:
+        stun_allowed = not args.stun or any(permits_port(rule, '17', 3478) for response in lists.values()
+                                           for rule in response.data.ingress_security_rules)
+        if args.stun:
+            print('Existing public stateful UDP 3478 rule:', stun_allowed)
+        if (allowed and stun_allowed) or not args.apply:
             return
         operation = 'GetVcn'
         vcn = client.get_vcn(subnet.vcn_id).data
@@ -75,13 +84,21 @@ def main():
         if not etag:
             raise RuntimeError('Security list ETag absent; refusing an unprotected update')
         models = oci.core.models
-        new_rule = models.IngressSecurityRule(
+        new_rules = []
+        if not allowed:
+            new_rules.append(models.IngressSecurityRule(
             protocol='6', source='0.0.0.0/0', source_type='CIDR_BLOCK', is_stateless=False,
             description='Lazarus Share HTTPS signaling',
             tcp_options=models.TcpOptions(destination_port_range=models.PortRange(min=443, max=443)),
-        )
+            ))
+        if not stun_allowed:
+            new_rules.append(models.IngressSecurityRule(
+                protocol='17', source='0.0.0.0/0', source_type='CIDR_BLOCK', is_stateless=False,
+                description='Lazarus Share STUN discovery only',
+                udp_options=models.UdpOptions(destination_port_range=models.PortRange(min=3478, max=3478)),
+            ))
         details = models.UpdateSecurityListDetails(
-            ingress_security_rules=[*original.ingress_security_rules, new_rule],
+            ingress_security_rules=[*original.ingress_security_rules, *new_rules],
             egress_security_rules=original.egress_security_rules,
         )
         operation = 'UpdateSecurityList'
@@ -90,11 +107,11 @@ def main():
         updated = client.get_security_list(target).data
         old_ingress = oci.util.to_dict(original.ingress_security_rules)
         old_egress = oci.util.to_dict(original.egress_security_rules)
-        expected = [*old_ingress, oci.util.to_dict(new_rule)]
+        expected = [*old_ingress, *oci.util.to_dict(new_rules)]
         if (oci.util.to_dict(updated.ingress_security_rules) != expected
                 or oci.util.to_dict(updated.egress_security_rules) != old_egress):
             raise RuntimeError('Post-update rules differ from the expected preserved rules; inspect concurrent changes')
-        print('Added only stateful public TCP 443; existing ingress and egress rules verified unchanged')
+        print('Added only requested HTTPS/STUN rules; existing ingress and egress rules verified unchanged')
     except oci.exceptions.ServiceError as error:
         print(f'Oracle API denied/failed: operation={operation} status={error.status} code={error.code}; credentials and identifiers omitted', file=sys.stderr)
         raise SystemExit(1)

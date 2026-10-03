@@ -1,5 +1,27 @@
 # Single public IP: rooms/P2P only, no TURN credentials or relay.
 services:
+  stun:
+    image: coturn/coturn:4.6.3
+    ports:
+      - "${SIGNAL_IP:-0.0.0.0}:3478:3478/udp"
+    command:
+      - --stun-only
+      - --listening-ip=0.0.0.0
+      - --listening-port=3478
+      - --no-tcp
+      - --no-tls
+      - --no-dtls
+      - --no-cli
+      - --no-software-attribute
+      - --no-rfc5780
+      - --no-stun-backward-compatibility
+      - --response-origin-only-with-rfc5780
+      - --log-file=/dev/null
+      - --no-stdout-log
+      - --simple-log
+    restart: unless-stopped
+    logging:
+      driver: none
   signaling:
     build:
       context: ..
