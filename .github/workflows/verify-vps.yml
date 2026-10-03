@@ -1,0 +1,26 @@
+name: Verify public VPS relay
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install media verification dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y cmake build-essential pkg-config
+          qt6-base-dev qt6-websockets-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          libgstreamer-plugins-bad1.0-dev libpipewire-0.3-dev gstreamer1.0-plugins-base
+          gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-nice
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target media-test -j2
+      - run: python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt
+      - name: Check real HTTPS, WSS and TURN media from outside the VPS
+        env:
+          SIGNAL_HOST: ${{ vars.SIGNAL_HOST }}
+          QT_QPA_PLATFORM: offscreen
+          LAZARUS_VIDEO_ENCODER: vp8
+          GST_DEBUG: '0'
+        run: .venv/bin/python server/tests/public_relay.py "$SIGNAL_HOST" build/media-test

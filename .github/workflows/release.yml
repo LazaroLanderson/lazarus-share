@@ -8,6 +8,13 @@ on:
       version:
         description: Release version without v (for example 0.1.3)
         required: true
+      publish:
+        description: Publish after successful external VPS verification (otherwise draft)
+        type: boolean
+        default: false
+      verification_run_id:
+        description: Successful Verify public VPS relay run for the same commit (required to publish)
+        required: false
 permissions:
   contents: write
   actions: read
@@ -25,6 +32,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.run_id }}
           VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+          VERIFICATION_RUN_ID: ${{ inputs.verification_run_id }}
         run: |
           set -Eeuo pipefail
           [[ "$RUN_ID" =~ ^[0-9]+$ ]]
@@ -39,6 +48,11 @@ jobs:
           sha=run['head_sha']
           raw=json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/contents/CMakeLists.txt?ref='+sha],text=True))
           assert 'VERSION '+os.environ['VERSION']+' ' in base64.b64decode(raw['content']).decode()
+          if os.environ.get('PUBLISH')=='true':
+              verification_id=os.environ.get('VERIFICATION_RUN_ID','')
+              assert verification_id.isdecimal(), 'External verification run is required'
+              verified=json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+verification_id],text=True))
+              assert verified['conclusion']=='success' and verified['head_sha']==sha and verified['path']=='.github/workflows/verify-vps.yml', 'Public VPS verification must match this build'
           with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('sha='+sha+'\n')
           PY
       - uses: actions/download-artifact@v4
@@ -54,6 +68,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           RUN_ID: ${{ inputs.run_id }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
           set -Eeuo pipefail
           cd release
@@ -96,4 +111,8 @@ jobs:
               asset=next(a for a in release['assets'] if a['name']==name)
               assert asset['digest']=='sha256:'+hashlib.sha256(Path(name).read_bytes()).hexdigest(), name
           PY
-          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false
+          if [[ "$PUBLISH" == true ]]; then
+            gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false
+          else
+            echo "Verified assets prepared in draft; public infrastructure validation is pending"
+          fi

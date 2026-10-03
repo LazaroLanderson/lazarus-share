@@ -16,7 +16,9 @@ Redes que permitem apenas 443 podem continuar bloqueadas. Não há relay de terc
    `SIGNAL_TLS_MODE=system`, `VPS_DEPLOY_MODE=single`, `VPS_DEPLOY_ENABLED=true`.
 5. Execute **Deploy VPS** no commit validado. Health checks verificam TLS sem `-k`;
    certificado/credenciais ausentes impedem subir a configuração nova.
-6. Confira HTTPS/WSS e TURN por UDP, TCP e TLS a partir de outra rede antes de publicar
+6. Execute **Verify public VPS relay**: cria uma sala temporária, aprova um viewer
+   de teste e verifica vídeo WebRTC criptografado por UDP, TCP e TLS de fora da VPS.
+   A sala é encerrada no final. Depois confira em PCs reais antes de publicar
    a release. App usa domínio público e CA do sistema, sem pin do certificado antigo.
 
 O timer `lazarus-share-cert-renew.timer` roda duas vezes por dia. Usa HTTP-01/webroot
@@ -27,6 +29,8 @@ proxy/Coturn não registram IPs, sessões ou conteúdo de negociação.
 Certificado IP antigo continua no virtual host padrão para acesso pela 0.1.4.
 Mantenha essa compatibilidade somente enquanto o certificado IP for válido.
 Se DNS ou ACME falhar, preserve o deployment existente e mantenha a release em rascunho.
+**Publish tested release** prepara rascunho por padrão; publicar exige `publish=true`
+e `verification_run_id` bem-sucedido para o mesmo commit do build.
 
 Exemplo de configuração: `infra/.env.single.example`. Chaves reais ficam em `.env`
 com modo 600; certificados/ACME e estado de deploy são ignorados pelo Git.

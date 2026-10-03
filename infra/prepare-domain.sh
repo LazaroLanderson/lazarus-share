@@ -26,7 +26,7 @@ with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as s:
     s.connect(('169.254.169.254',80)); private=s.getsockname()[0]
 p=Path('infra/.env'); values=dict(line.split('=',1) for line in p.read_text().splitlines() if '=' in line and not line.lstrip().startswith('#'))
 values.update(SIGNAL_HOST=host,SIGNAL_IP='0.0.0.0',SIGNAL_TLS_MODE='system',TURN_HOST=host,TURN_PUBLIC_IP=public,TURN_PRIVATE_IP=private)
-if not values.get('TURN_SECRET'): values['TURN_SECRET']=secrets.token_hex(32)
+if not values.get('TURN_SECRET') or values['TURN_SECRET'].startswith('REPLACE_'): values['TURN_SECRET']=secrets.token_hex(32)
 with tempfile.NamedTemporaryFile(mode='w',dir=p.parent,delete=False) as f:
     f.write(''.join(k+'='+v+'\n' for k,v in values.items())); temporary=f.name
 os.replace(temporary,p)

@@ -32,17 +32,16 @@ services:
     logging:
       driver: none
   turn:
-    image: coturn/coturn:4.6.3
+    image: coturn/coturn:4.18.0-r0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
     network_mode: host
     entrypoint: [/bin/sh, -ec]
     command:
       - >-
-        exec turnserver --no-cli --no-multicast-peers --no-loopback-peers
+        exec turnserver -n --no-multicast-peers
         --denied-peer-ip=10.0.0.0-10.255.255.255
         --denied-peer-ip=172.16.0.0-172.31.255.255
         --denied-peer-ip=192.168.0.0-192.168.255.255
         --denied-peer-ip=169.254.0.0-169.254.255.255
-        --no-tlsv1 --no-tlsv1_1 --no-dtls
         --listening-ip="$${TURN_IP}" --relay-ip="$${TURN_IP}"
         --external-ip="$${TURN_IP}" --realm="$${TURN_HOST}"
         --listening-port=3478 --tls-listening-port=443

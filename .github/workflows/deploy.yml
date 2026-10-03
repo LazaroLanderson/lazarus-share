@@ -24,6 +24,7 @@ jobs:
           bash -n infra/deploy.sh
           docker compose --env-file infra/.env.example -f infra/compose.yml config --quiet
           docker compose --env-file infra/.env.example -f infra/compose.signaling.yml config --quiet
+          docker compose --env-file infra/.env.single.example -f infra/compose.single.yml config --quiet
       - name: Test real signaling container and TLS WebSocket proxy
         run: |
           mkdir -p infra/certs/signal
@@ -35,6 +36,8 @@ jobs:
           trap '"${compose[@]}" down' EXIT
           "${compose[@]}" up -d --build --wait --wait-timeout 120
           python infra/tests/compose_smoke.py
+      - name: Test single-IP domain proxy and TURN listeners
+        run: python infra/tests/single_smoke.py
   deploy:
     needs: validate
     # Enable only after the VPS, TLS, SSH key and known_hosts have been prepared.
