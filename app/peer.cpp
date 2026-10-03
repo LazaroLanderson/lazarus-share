@@ -196,7 +196,7 @@ void Peer::padAdded(GstElement *, GstPad *pad, gpointer data) {
     if ((!video && !audio) || self->host_) return;
     GError *error = nullptr;
     // Never drop RTP fragments: discard only complete decoded frames at appsink.
-    QString receive = video ? QString("queue max-size-buffers=0 max-size-bytes=0 max-size-time=2000000000 ! %1 ! videoconvert ! video/x-raw,format=RGB ! appsink name=frames emit-signals=true sync=false max-buffers=1 drop=true")
+    QString receive = video ? QString("queue max-size-buffers=0 max-size-bytes=0 max-size-time=2000000000 ! %1 ! videoconvert ! video/x-raw,format=BGRx ! appsink name=frames emit-signals=true sync=false max-buffers=1 drop=true")
         .arg(h264 ? "rtph264depay request-keyframe=true wait-for-keyframe=true ! video/x-h264,alignment=au ! h264parse ! openh264dec discard-corrupted-frames=true automatic-request-sync-points=true" : "rtpvp8depay request-keyframe=true wait-for-keyframe=true ! vp8dec") :
         "queue max-size-time=200000000 leaky=downstream ! rtpopusdepay ! opusdec ! audioconvert ! audioresample ! autoaudiosink sync=false";
     auto *bin = gst_parse_bin_from_description(receive.toUtf8().constData(), TRUE, &error);
@@ -217,7 +217,7 @@ GstFlowReturn Peer::newFrame(GstAppSink *sink, gpointer data) {
     if (gst_video_info_from_caps(&info, gst_sample_get_caps(sample)) &&
         gst_video_frame_map(&frame, &info, gst_sample_get_buffer(sample), GST_MAP_READ)) {
         QImage image(static_cast<const uchar *>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 0)),
-            GST_VIDEO_INFO_WIDTH(&info), GST_VIDEO_INFO_HEIGHT(&info), GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 0), QImage::Format_RGB888);
+            GST_VIDEO_INFO_WIDTH(&info), GST_VIDEO_INFO_HEIGHT(&info), GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 0), QImage::Format_RGB32);
         { QMutexLocker lock(&self->frameMutex_); if(!self->frame_.isNull())++self->displayDrops_;self->frame_ = image.copy(); ++self->decodedFrames_; }
         gst_video_frame_unmap(&frame);
     }

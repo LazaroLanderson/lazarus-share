@@ -38,3 +38,5 @@ Buscar redução de 10% de CPU do host com quatro viewers; publicar o ganho efet
 Testes locais cobrem módulos de bitrate, conversão/pixels, watchdog de cinco segundos, software, qualidade, vídeo sem áudio, quatro viewers, recuperação isolada, callback antigo, falha terminal, pausa/retomada e fallback TURN UDP/TCP/TLS. CI nativo Linux/Windows e inicialização dos pacotes serão registrados com seus resultados.
 
 Ainda pendentes: NVIDIA real, Quick Sync no Windows, vários dispositivos de GPU, monitores 4K/HiDPI, captura física Wayland/Windows e o caso do Windows com 0 kbps. A sessão sintética local não substitui testes entre máquinas ou de longa duração na Dtel.
+
+O bitrate informado é de vídeo RTP. Áudio autorizado, cabeçalhos adicionais e retransmissões podem aumentar o upload real da interface de rede. `frames_pending_estimate` não é usado para declarar descartes; a referência 0.2.0 não tinha o contador de descarte conhecido por fila e exibição da nova versão.

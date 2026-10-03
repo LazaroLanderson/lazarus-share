@@ -14,6 +14,7 @@ if output==repo or repo in output.parents:
     raise SystemExit('Use a separate empty directory outside the checkout')
 output.mkdir(parents=True,exist_ok=True)
 if any(output.iterdir()):raise SystemExit('Output directory must be empty')
+(output/'LICENSE').write_bytes((repo/'LICENSE').read_bytes())
 source=output/'app';source.mkdir()
 reference='461e8022f507f8549cec082ba2b551e7608f34e5'
 for name in ('peer.cpp','peer.h','encoder.cpp','encoder.h'):

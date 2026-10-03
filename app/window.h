@@ -45,6 +45,7 @@ private:
         double kbps = 0;
         QString route = "Negociando P2P";
         QJsonObject metrics;
+        QSize receivedSize;
     };
     void editIdentity();
     void updateIdentity();

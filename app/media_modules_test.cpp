@@ -40,7 +40,14 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
     check(!prepare.nv12(sample),"Pool grew beyond eight buffers");
     for(auto *item:heldBuffers)gst_sample_unref(item);converted=prepare.nv12(sample);check(converted,"Pool did not recover released buffers");
     gst_sample_unref(converted);gst_sample_unref(sample);gst_buffer_unref(buffer);gst_caps_unref(caps);
-    VideoView view;view.resize(640,360);QImage picture(1280,720,QImage::Format_RGB888);picture.fill(QColor(12,34,56));view.setFrame(picture);view.show();app.processEvents();check(view.hasFrame(),"Render frame lost");auto rendered=view.grab().toImage();check(rendered.pixelColor(rendered.width()/2,rendered.height()/2)==QColor(12,34,56),"Rendered pixel integrity");if(app.arguments().contains("--require-gl"))check(view.backend()=="OpenGL","OpenGL path unavailable");view.clearFrame("Stopped");check(!view.hasFrame(),"Stop retained frame");
+    VideoView view;view.resize(640,360);view.show();
+    for(auto format:{QImage::Format_RGB888,QImage::Format_RGB32,QImage::Format_RGBA8888,QImage::Format_RGB888}){
+        QImage picture(1280,720,format);picture.fill(QColor(12,34,56));view.setFrame(picture);app.processEvents();
+        check(view.hasFrame(),"Render frame lost");auto rendered=view.grab().toImage();
+        check(rendered.pixelColor(rendered.width()/2,rendered.height()/2)==QColor(12,34,56),"Rendered pixel integrity or format switch");
+    }
+    if(app.arguments().contains("--require-gl"))check(view.backend()=="OpenGL","OpenGL path unavailable");
+    view.clearFrame("Stopped");check(!view.hasFrame(),"Stop retained frame");
     auto cpu=selectVideoEncoder(30,3000,1280,720,true);check(cpu.factory=="vp8enc" && cpu.codec=="VP8","Software selection");
     auto *feature=gst_registry_find_feature(gst_registry_get(),"vp8enc",GST_TYPE_ELEMENT_FACTORY);check(feature,"Missing VP8 test fixture");
     gst_registry_remove_feature(gst_registry_get(),feature);gst_object_unref(feature);

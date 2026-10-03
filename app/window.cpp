@@ -68,7 +68,7 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     actions->addWidget(approve_); actions->addWidget(remove_); actions->addWidget(relay_); left->addLayout(actions);
     audioStatus_ = new QLabel(audio_.supported() ? "Áudio desligado. Marque somente aplicativos autorizados." : audio_.limitation()); audioStatus_->setWordWrap(true);
     left->addWidget(audioStatus_); apps_ = new QListWidget; left->addWidget(apps_); middle->addLayout(left, 1);
-    video_ = new VideoView;video_->setText("O viewer verá a tela aqui."); video_->setAlignment(Qt::AlignCenter); video_->setMinimumSize(400, 260);
+    video_ = new VideoView;video_->setText("O viewer verá a tela aqui."); video_->setAlignment(Qt::AlignCenter); video_->setMinimumSize(400, 260);video_->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
     video_->setStyleSheet("background: #151515; color: white"); middle->addWidget(video_, 2); layout->addLayout(middle);
     video_->setObjectName("video");
     metrics_ = new QLabel("Upload: 0 kbps"); metrics_->setWordWrap(true); layout->addWidget(metrics_);
@@ -269,7 +269,7 @@ void Window::message(const QJsonObject &m) {
             auto p = body["profile"].toObject(); auto name = normalizedNickname(p["nickname"].toString());
             if (!name.isEmpty()) { c.nickname = name; c.avatar = qBound(0,p["avatar"].toInt(),9); row(id, "Perfil atualizado"); log("profile_updated", id); }
         } else if (kind == "sharing" && !host_) {
-            if (!body["enabled"].toBool()) { ++c.selection;c.selecting=false;c.media.reset(); c.kbps = 0; video_->clearFrame("Host não está compartilhando."); metrics_->setText("Aguardando compartilhamento"); }
+            if (!body["enabled"].toBool()) { ++c.selection;c.selecting=false;c.media.reset(); c.kbps = 0;c.receivedSize={};c.route="Aguardando compartilhamento";c.metrics={{"stage","paused"},{"video_fps",0},{"kbps",0},{"selected_pair",false}}; video_->clearFrame("Host não está compartilhando."); metrics_->setText("Aguardando compartilhamento"); }
         } else if (kind == "relay-request" && !host_) {
             if (c.localConsent && c.remoteConsent) send({{"type", "relay"}, {"peer", id}, {"enabled", true}});
         } else if (kind == "connection-failure" && host_ && sharing_ && generation == c.generation && !c.fatalMedia) {
@@ -313,7 +313,7 @@ void Window::message(const QJsonObject &m) {
 }
 void Window::startPeer(const QString &id) {
     auto it = peers_.find(id); if (it == peers_.end()) return; auto &c = *it->second;
-    c.media.reset();c.started=time_.elapsed();c.failed=false;c.fatalMedia=false;c.metrics={};c.kbps=0;c.route="Preparando mídia";log("connection_attempt",id);
+    c.media.reset();c.started=time_.elapsed();c.failed=false;c.fatalMedia=false;c.metrics={};c.receivedSize={};c.kbps=0;c.route="Preparando mídia";log("connection_attempt",id);
     int generation=c.generation;
     if(!host_){attachPeer(id,{},generation);return;}
     c.selecting=true;int selection=++c.selection;auto q=quality();auto dimensions=capture_.dimensions();if(dimensions.isValid()){q.width=dimensions.width();q.height=dimensions.height();}
@@ -338,6 +338,7 @@ void Window::attachPeer(const QString &id,VideoEncoder backend,int generation){
     });
     connect(c.media.get(), &Peer::transportError, this, [this,id,generation] {
         auto it=peers_.find(id); if(it==peers_.end() || it->second->generation!=generation)return;
+        if(it->second->fatalMedia)return;
         it->second->failed=true; it->second->metrics["stage"]="failed"; log("transport_error",id,{{"error_code","ice_or_dtls"}});
         if(!host_) signal(id,{{"kind","connection-failure"}});
     });
@@ -345,6 +346,7 @@ void Window::attachPeer(const QString &id,VideoEncoder backend,int generation){
     connect(c.media.get(), &Peer::metrics, this, [this, id, generation](QJsonObject values) {
         auto it = peers_.find(id); if (it == peers_.end() || it->second->generation != generation) return;
         auto &c = *it->second; c.kbps = values["kbps"].toDouble(); c.route = values["route"].toString();
+        if(!host_){values["width"]=c.receivedSize.isValid()?c.receivedSize.width():0;values["height"]=c.receivedSize.isValid()?c.receivedSize.height():0;}
         c.metrics = values; if (c.media && c.media->connected() && c.route != "Verificando") c.lastRoute = c.route; log("connection_metrics", id, {{"render_backend",video_->backend()},{"metrics", values}});
         if (!c.fatalMedia) {
             auto summary=QString("%1 | %2 kbps | perda %3% | RTT %4 ms | vídeo %5 FPS").arg(c.route).arg(c.kbps,0,'f',0).arg(values["loss_percent"].toDouble(),0,'f',1).arg(values["rtt_ms"].toDouble(),0,'f',0).arg(values["video_fps"].toDouble(),0,'f',1);
@@ -352,7 +354,12 @@ void Window::attachPeer(const QString &id,VideoEncoder backend,int generation){
             row(id,summary);
         }
     });
-    connect(c.media.get(),&Peer::mediaFailure,this,[this,id,generation](QString code){QTimer::singleShot(0,this,[this,id,generation,code]{mediaFailure(id,generation,code);});});
+    connect(c.media.get(),&Peer::mediaFailure,this,[this,id,generation](QString code){
+        auto it=peers_.find(id);if(it==peers_.end() || it->second->generation!=generation)return;
+        // Block network recovery immediately; cleanup waits until Peer::poll returns.
+        it->second->fatalMedia=true;
+        QTimer::singleShot(0,this,[this,id,generation,code]{mediaFailure(id,generation,code);});
+    });
     auto q=quality();auto dimensions=capture_.dimensions();if(host_ && dimensions.isValid()){q.width=dimensions.width();q.height=dimensions.height();}
     if(host_)c.software=backend.codec=="VP8";
     if(host_ && backend.format=="NV12")capture_.requireNv12(true);
@@ -371,7 +378,7 @@ void Window::mediaFailure(const QString &id,int generation,const QString &code){
         signal(id,{{"kind","restart"},{"generation",c.generation},{"relay",c.transport>=0},{"transport",c.transport},{"reason","encoder_fallback"}});
         log("encoder_fallback",id,{{"error_code",code}});startPeer(id);return;
     }
-    c.media.reset();c.failed=c.fatalMedia=true;c.selecting=false;row(id,"Falha de mídia — tentar novamente");notice("Não foi possível manter a mídia. Tente novamente ou selecione qualidade menor.");
+    c.media.reset();c.failed=c.fatalMedia=true;c.selecting=false;c.kbps=0;c.route="Falha de mídia";c.metrics["stage"]="media_failed";c.metrics["selected_pair"]=false;c.metrics["kbps"]=0;c.metrics["video_fps"]=0;c.metrics["error_code"]=code;row(id,"Falha de mídia — tentar novamente");notice("Não foi possível manter a mídia. Tente novamente ou selecione qualidade menor.");
 }
 void Window::relay() {
     auto id = selectedPeer(); auto it = peers_.find(id); if (it == peers_.end()) return;
@@ -396,7 +403,7 @@ void Window::tick() {
         if (time_.elapsed() - lastFrameTime_ >= 1000) {
             double total = 0; for (auto &[id, c] : peers_) total += c->kbps;
             auto size = capture_.dimensions();
-            metrics_->setText(QString("Captura %1×%2 | %3 FPS de captura | upload total %4 kbps | teto %5 kbps/viewer | %6")
+            metrics_->setText(QString("Captura %1×%2 | %3 FPS de captura | upload de vídeo %4 kbps | teto %5 kbps/viewer | %6")
                 .arg(size.width()).arg(size.height()).arg(frames_ * 1000.0 / (time_.elapsed() - lastFrameTime_),0,'f',1).arg(total,0,'f',0).arg(quality().kbps).arg(peers_.empty() || !peers_.begin()->second->media ? "Aguardando viewer" : peers_.begin()->second->media->encoderName()));
             auto captureMetrics=capture_.takeMetrics();
             log("capture_metrics", {}, {{"frames_discarded",captureMetrics["frames_discarded"]},{"prepare_us",captureMetrics["prepare_us"]},{"width",size.width()},{"height",size.height()},{"capture_fps",frames_ * 1000.0 / (time_.elapsed() - lastFrameTime_)},{"kbps",total},{"target_fps",quality().fps},{"target_kbps",quality().kbps}});
@@ -406,6 +413,7 @@ void Window::tick() {
         for (auto &[id, c] : peers_) if (c->media) {
             auto image = c->media->takeFrame();
             if (!image.isNull()) {
+                if(c->receivedSize!=image.size()){c->receivedSize=image.size();c->metrics["width"]=image.width();c->metrics["height"]=image.height();}
                 video_->setFrame(image);
                 metrics_->setText(QString("Vídeo recebido: %1×%2 | %3 | %4 FPS decodificados").arg(image.width()).arg(image.height()).arg(c->route).arg(c->metrics["video_fps"].toDouble(),0,'f',1));
             }
@@ -494,7 +502,7 @@ void Window::share() {
 void Window::stopSharing() {
     bool previous = sharing_ || capturePending_; sharing_ = capturePending_ = false;
     capture_.stop(); audio_.stop();
-    if (host_) for (auto &[id,c] : peers_) { if (!c->session.isEmpty()) signal(id, {{"kind","sharing"},{"enabled",false}}); ++c->generation;++c->selection;c->selecting=false;c->media.reset(); c->kbps = 0; c->exhausted = false; }
+    if (host_) for (auto &[id,c] : peers_) { if (!c->session.isEmpty()) signal(id, {{"kind","sharing"},{"enabled",false}}); ++c->generation;++c->selection;c->selecting=false;c->media.reset(); c->kbps = 0; c->exhausted = false;c->route="Aguardando compartilhamento";c->metrics={{"stage","paused"},{"video_fps",0},{"kbps",0},{"selected_pair",false}};row(id,c->route); }
     share_->setEnabled(active_ && host_ && created_); pause_->setEnabled(false); change_->setEnabled(false); refreshAudio();
     if (previous) { log("sharing_stopped"); metrics_->setText("Sem compartilhamento | upload 0 kbps"); notice("Compartilhamento parado. A sala continua aberta."); }
 }

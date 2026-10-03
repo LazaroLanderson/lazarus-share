@@ -59,7 +59,7 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
 #else
    display.setFrame(image);
 #endif
-   // Flush raster/GL presentation before acknowledging this synthetic frame.
+   // Flush raster painting before acknowledgement; this fixture forces software rendering.
    display.repaint();if(id)send(&socket,{{"fixture","presented"},{"frame",double(id)},{"presented_ms",double(mono())}});
   });frames.start();QTimer::singleShot((seconds+15)*1000,Qt::PreciseTimer,&app,&QCoreApplication::quit);return app.exec();
  }

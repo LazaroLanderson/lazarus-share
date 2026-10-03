@@ -10,7 +10,15 @@ class TextureView : public QOpenGLWidget,protected QOpenGLFunctions {
 public:
     explicit TextureView(VideoView *owner):QOpenGLWidget(owner),owner_(owner){setAttribute(Qt::WA_TransparentForMouseEvents);}
     ~TextureView(){if(context() && isValid()){makeCurrent();if(texture_)glDeleteTextures(1,&texture_);buffer_.destroy();program_.reset();doneCurrent();}}
-    void frame(QImage image){image_=std::move(image);dirty_=true;update();}
+    void frame(QImage image){
+        // Qt's native RGB32 avoids another RGB24-to-pixmap conversion. GLES 2
+        // has no portable BGRA upload, so convert once when a new frame arrives.
+        if(!image.isNull() && image.format()!=QImage::Format_RGB888 && image.format()!=QImage::Format_RGB32 && image.format()!=QImage::Format_RGBA8888)
+            image=image.convertToFormat(QImage::Format_RGB32);
+        if(!image.isNull() && image.format()==QImage::Format_RGB32 && context() && context()->isOpenGLES())
+            image=image.convertToFormat(QImage::Format_RGBA8888);
+        image_=std::move(image);dirty_=true;update();
+    }
 protected:
     void initializeGL() override {
         initializeOpenGLFunctions();program_=std::make_unique<QOpenGLShaderProgram>();
@@ -24,9 +32,12 @@ protected:
         glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);if(!ready_ || image_.isNull())return;
         glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,texture_);
         if(dirty_){
+            if(image_.format()==QImage::Format_RGB32 && context()->isOpenGLES())image_=image_.convertToFormat(QImage::Format_RGBA8888);
+            GLenum upload=image_.format()==QImage::Format_RGB888?GL_RGB:(image_.format()==QImage::Format_RGB32?GLenum(0x80E1):GL_RGBA);
+            GLenum internal=upload==GL_RGB?GL_RGB:GL_RGBA;
             glPixelStorei(GL_UNPACK_ALIGNMENT,4);
-            if(image_.size()!=textureSize_){glTexImage2D(GL_TEXTURE_2D,0,GL_RGB,image_.width(),image_.height(),0,GL_RGB,GL_UNSIGNED_BYTE,image_.constBits());textureSize_=image_.size();}
-            else glTexSubImage2D(GL_TEXTURE_2D,0,0,0,image_.width(),image_.height(),GL_RGB,GL_UNSIGNED_BYTE,image_.constBits());dirty_=false;
+            if(image_.size()!=textureSize_ || internal!=textureFormat_){glTexImage2D(GL_TEXTURE_2D,0,internal,image_.width(),image_.height(),0,upload,GL_UNSIGNED_BYTE,image_.constBits());textureSize_=image_.size();textureFormat_=internal;}
+            else glTexSubImage2D(GL_TEXTURE_2D,0,0,0,image_.width(),image_.height(),upload,GL_UNSIGNED_BYTE,image_.constBits());dirty_=false;
         }
         QSize fit=image_.size();fit.scale(size(),Qt::KeepAspectRatio);float x=float(fit.width())/qMax(1,width()),y=float(fit.height())/qMax(1,height());
         const float vertices[]={-x,-y,0,1,x,-y,1,1,-x,y,0,0,x,y,1,0};
@@ -34,7 +45,7 @@ protected:
         int position=program_->attributeLocation("position"),uv=program_->attributeLocation("uv");program_->enableAttributeArray(position);program_->enableAttributeArray(uv);program_->setAttributeBuffer(position,GL_FLOAT,0,2,4*sizeof(float));program_->setAttributeBuffer(uv,GL_FLOAT,2*sizeof(float),2,4*sizeof(float));program_->setUniformValue("frame",0);glDrawArrays(GL_TRIANGLE_STRIP,0,4);buffer_.release();program_->release();
     }
 private:
-    VideoView *owner_;QImage image_;QSize textureSize_;bool dirty_=false,ready_=false;GLuint texture_=0;
+    VideoView *owner_;QImage image_;QSize textureSize_;bool dirty_=false,ready_=false;GLuint texture_=0;GLenum textureFormat_=0;
     QOpenGLBuffer buffer_;std::unique_ptr<QOpenGLShaderProgram> program_;
 };
 VideoView::VideoView(QWidget *parent):QLabel(parent){
