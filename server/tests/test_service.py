@@ -70,6 +70,36 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("secret", h)
         self.assertEqual(h["host"], "turn.example.org")
 
+    async def test_turn_renewal_and_revocation(self):
+        host = await self.host(); guest, pid = await self.guest(host)
+        await host.send_json(dict(type="relay",peer=pid,enabled=True))
+        await guest.send_json(dict(type="relay",enabled=True))
+        first = await self.receive(host,"turn"); await self.receive(guest,"turn")
+        self.assertEqual(len(first['endpoints']),3)
+        self.assertIn('transport=tcp',first['endpoints'][1])
+        self.now=31
+        await host.send_json(dict(type="relay",peer=pid,enabled=False))
+        await guest.send_json(dict(type="relay",enabled=True))
+        with self.assertRaises(asyncio.TimeoutError): await asyncio.wait_for(host.receive_json(),.05)
+        await host.send_json(dict(type="relay",peer=pid,enabled=True))
+        renewed=await self.receive(host,"turn"); await self.receive(guest,"turn")
+        self.assertNotEqual(first['username'],renewed['username'])
+
+    async def test_profiles_are_validated_and_exchanged(self):
+        host=await self.socket()
+        await host.send_json(dict(type="create",room=self.room,admin=self.admin,challenge="a"*32,profile={'nickname':'Jose\u0301','avatar':9},capabilities=['sharing']))
+        await self.receive(host,'created')
+        guest=await self.socket()
+        await guest.send_json(dict(type='join',room=self.room,challenge='b'*32,profile={'nickname':'abcdefghijk','avatar':0}))
+        await self.receive(guest,'error')
+        await guest.send_json(dict(type='join',room=self.room,challenge='b'*32,profile={'nickname':'José','avatar':2}))
+        joined=await self.receive(guest,'joined'); waiting=await self.receive(host,'waiting')
+        self.assertEqual(waiting['profile']['nickname'],'José')
+        await host.send_json(dict(type='approve',peer=joined['peer']))
+        await self.receive(host,'ready'); ready=await self.receive(guest,'ready')
+        self.assertEqual(ready['profile'],{'nickname':'José','avatar':9})
+        self.assertIn('sharing',ready['capabilities'])
+
     async def test_forwarding_is_opaque_and_remove_revokes(self):
         host = await self.host(); guest, pid = await self.guest(host)
         await guest.send_json(dict(type="signal", payload="opaque", mac="f" * 64))

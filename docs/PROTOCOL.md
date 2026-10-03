@@ -61,3 +61,31 @@ Salas expiram 60 segundos após queda do host. Rate limit guarda IPs por até 60
 Cliente: parâmetros na memória; cache técnico de plugins GStreamer local.
 Diagnóstico exportado manualmente inclui métricas e capacidades, sem convite,
 segredos, IPs, nomes de aplicativos, SDP ou credenciais TURN. Não há envio automático.
+
+
+## Extensões aditivas da 0.2.0
+
+`create`/`resume`/`join` podem conter `profile: {nickname, avatar}` e a lista
+`capabilities` (`profile`, `sharing`, `turn-endpoints`). `waiting` e `ready`
+repassam o perfil e capacidades do outro participante. Perfil permanece somente
+na RAM do serviço. Nickname é normalizado NFC, no máximo 10 grafemas/80 unidades
+Unicode no cliente, sem controles; avatar é inteiro de 0 a 9. Nomes não são identidades
+verificadas. Após aprovação, `profile` também circula no body autenticado.
+
+Sala não implica captura. Body `sharing {enabled}` informa transmissão/pausa.
+`restart {generation, relay, transport}` inicia nova tentativa; transport -1 indica
+P2P e 0/1/2 correspondem a UDP/TCP/TLS. Somente o host coordena reinícios.
+`relay-consent {enabled}` transmite a preferência local autenticada. Consentimento
+persistido é reaplicado à nova sessão, mas o servidor só recebe os pedidos `relay`
+após o body `relay-request` coordenado pelo host em falha direta. Sem dupla autorização,
+não se configura TURN. `retry-request` solicita nova tentativa ao host.
+
+Resposta `turn` acrescenta `endpoints` (URLs sem credenciais), além de host,
+username, password e expires. Credenciais expiram em uma hora; reemissão exige
+participante aprovado, duas permissões e intervalo mínimo de 30 segundos.
+Clientes renovam cinco minutos antes da expiração e reaproveitam credenciais ainda
+válidas ao retomar uma transmissão na mesma sala. Desabilitar a preferência encerra
+imediatamente a rota relay e revoga o consentimento no servidor.
+
+Clientes 0.1.4 continuam com o comportamento antigo, sem nickname e pausa visual.
+Atualizar todos os participantes é recomendado. Criptografia e envelope v1 não mudam.

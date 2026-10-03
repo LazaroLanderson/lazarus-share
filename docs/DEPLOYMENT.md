@@ -1,3 +1,38 @@
+# Deploy 0.2.0 em VPS Oracle com um IP
+
+A configuração recomendada usa `infra/compose.single.yml`: HTTPS/WSS em 443,
+TURN UDP/TCP em 3478, TURN/TLS em 5349 e alocações UDP 49160–49200.
+Redes que permitem apenas 443 podem continuar bloqueadas. Não há relay de terceiros.
+
+1. Cloudflare: registro A `share.app` -> `129.148.20.150`, Somente DNS, TTL Auto.
+   Domínio completo: `share.app.lazaruslabs.com.br`. Não crie URL redirection nem proxy.
+2. Preserve os quatro secrets SSH já configurados. Execute **Prepare domain and TURN**
+   no GitHub Actions. O workflow verifica DNS e porta 80 antes de alterar infraestrutura,
+   usa instance principal para regras limitadas Oracle e preserva TeamSpeak/regras existentes.
+3. O bootstrap emite certificado público, mantém separado o certificado IP da 0.1.4,
+   prepara `.env` privado com segredo TURN aleatório e identifica o IP privado da VPS.
+   Nenhum segredo deve ficar em GitHub Variables ou no cliente.
+4. Configure Variables: `SIGNAL_HOST=share.app.lazaruslabs.com.br`, `SIGNAL_IP=0.0.0.0`,
+   `SIGNAL_TLS_MODE=system`, `VPS_DEPLOY_MODE=single`, `VPS_DEPLOY_ENABLED=true`.
+5. Execute **Deploy VPS** no commit validado. Health checks verificam TLS sem `-k`;
+   certificado/credenciais ausentes impedem subir a configuração nova.
+6. Confira HTTPS/WSS e TURN por UDP, TCP e TLS a partir de outra rede antes de publicar
+   a release. App usa domínio público e CA do sistema, sem pin do certificado antigo.
+
+O timer `lazarus-share-cert-renew.timer` roda duas vezes por dia. Usa HTTP-01/webroot
+pela porta 80, recarrega Nginx e reinicia somente Coturn quando o certificado muda.
+A renovação e deploy usam o mesmo lock. Consulte falhas operacionais pelo systemd;
+proxy/Coturn não registram IPs, sessões ou conteúdo de negociação.
+
+Certificado IP antigo continua no virtual host padrão para acesso pela 0.1.4.
+Mantenha essa compatibilidade somente enquanto o certificado IP for válido.
+Se DNS ou ACME falhar, preserve o deployment existente e mantenha a release em rascunho.
+
+Exemplo de configuração: `infra/.env.single.example`. Chaves reais ficam em `.env`
+com modo 600; certificados/ACME e estado de deploy são ignorados pelo Git.
+
+---
+
 # Hospedar salas e relay
 
 Necessário: servidor Linux com Docker Compose, dois endereços IPv4 públicos

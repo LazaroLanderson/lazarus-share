@@ -170,3 +170,17 @@ O teste de política reproduziu a rejeição anterior e passou depois do ajuste.
 O teste de conexão TLS real verifica um servidor por IP com o backend nativo Qt,
 pin correto, pin substituído e SAN incompatível; o job Windows executa esse teste
 antes de empacotar.
+
+
+## 0.2.0 — validação nesta implementação
+
+Passaram localmente: perfil Unicode e persistência, remoção de segredos de logs,
+protocolo, mídia/qualidade por CPU e Intel, portal, quatro viewers aprovados sem
+captura inicial, compartilhar/parar/retomar, fallback automático UDP/TCP/TLS com
+Coturn real e recusa de relay. Servidor cobre cinco viewers, perfis inválidos,
+renovação/revogação TURN, reconexão e limites. Build nativo Windows e AppImage
+são validados pelo workflow de build; conferir a execução associada à release.
+
+DNS/certificado público, TURN externo na VPS, testes reais Linux/Windows,
+Windows 10/11 e sessão de 30 minutos na Dtel devem ser registrados quando realizados.
+O caso específico do viewer Windows ainda não foi reproduzido nesta implementação.

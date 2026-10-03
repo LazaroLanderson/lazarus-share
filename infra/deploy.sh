@@ -13,7 +13,8 @@ signal_tls_mode=${6:-system}
 case "$mode" in
   full) config=infra/compose.yml ;;
   signaling) config=infra/compose.signaling.yml ;;
-  *) echo 'Mode must be full or signaling' >&2; exit 2 ;;
+  single) config=infra/compose.single.yml ;;
+  *) echo 'Mode must be full, single or signaling' >&2; exit 2 ;;
 esac
 cd "$checkout"
 mkdir -p .deploy
@@ -24,7 +25,7 @@ git fetch --no-tags origin main
 git merge-base --is-ancestor "$revision" origin/main || { echo 'Commit is not on origin/main' >&2; exit 1; }
 # Public GitHub Variables configure only the single-IP/P2P mode.
 # The TURN secret and other private configuration are preserved on the VPS.
-if [[ "$mode" == signaling && -n "$signal_host" && "$signal_host" != - ]]; then
+if [[ ("$mode" == signaling || "$mode" == single) && -n "$signal_host" && "$signal_host" != - ]]; then
   python3 - "$signal_host" "$signal_ip" "$signal_tls_mode" <<'PYENV'
 import ipaddress
 import os
@@ -76,7 +77,7 @@ if [[ "$verification" == pinned ]]; then
   [[ -r infra/certs/signal/fullchain.pem ]] || { echo 'Missing pinned TLS certificate'; exit 1; }
   health_options+=(--cacert infra/certs/signal/fullchain.pem)
 fi
-if [[ "$mode" == signaling ]]; then
+if [[ "$mode" == signaling || "$mode" == single ]]; then
   binding=${tls_settings[1]:-0.0.0.0}
   [[ "$binding" == 0.0.0.0 ]] && binding=127.0.0.1
   # Keep TLS hostname verification but avoid VPS public-IP/NAT hairpin routing.
@@ -87,6 +88,7 @@ compose=(docker compose --project-name lazarus-share --env-file infra/.env -f "$
 rollback() {
   echo 'Deployment failed; restoring previous commit' >&2
   git checkout --detach "$previous"
+  if [[ ! -f "$config" ]]; then compose=(docker compose --project-name lazarus-share --env-file infra/.env -f infra/compose.signaling.yml); fi
   "${compose[@]}" up -d --build --force-recreate --remove-orphans --wait --wait-timeout 120 || {
     echo 'Automatic recovery failed; operator intervention required' >&2; return 1;
   }

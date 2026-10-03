@@ -41,6 +41,7 @@ def main():
     parser.add_argument('--public-ip', required=True)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--stun', action='store_true', help='Also check/allow only UDP 3478 for the VPS STUN service')
+    parser.add_argument("--relay", action="store_true", help="Allow HTTP ACME and the bounded single-IP TURN ports")
     args = parser.parse_args()
     import oci
 
@@ -71,7 +72,9 @@ def main():
                                            for rule in response.data.ingress_security_rules)
         if args.stun:
             print('Existing public stateful UDP 3478 rule:', stun_allowed)
-        if (allowed and stun_allowed) or not args.apply:
+        relay_ports = [('6',80,80),('6',3478,3478),('6',5349,5349),('17',3478,3478),('17',49160,49200)] if args.relay else []
+        missing = [(protocol,start,end) for protocol,start,end in relay_ports if not any(all(permits_port(rule,protocol,port) for port in range(start,end+1)) for response in lists.values() for rule in response.data.ingress_security_rules)]
+        if (allowed and stun_allowed and not missing) or not args.apply:
             return
         operation = 'GetVcn'
         vcn = client.get_vcn(subnet.vcn_id).data
@@ -97,6 +100,9 @@ def main():
                 description='Lazarus Share STUN discovery only',
                 udp_options=models.UdpOptions(destination_port_range=models.PortRange(min=3478, max=3478)),
             ))
+        for protocol,start,end in missing:
+            options = models.TcpOptions if protocol == '6' else models.UdpOptions
+            new_rules.append(models.IngressSecurityRule(protocol=protocol, source='0.0.0.0/0', source_type='CIDR_BLOCK', is_stateless=False, description='Lazarus Share ACME/TURN', **{('tcp_options' if protocol == '6' else 'udp_options'):options(destination_port_range=models.PortRange(min=start,max=end))}))
         details = models.UpdateSecurityListDetails(
             ingress_security_rules=[*original.ingress_security_rules, *new_rules],
             egress_security_rules=original.egress_security_rules,

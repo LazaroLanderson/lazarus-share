@@ -8,6 +8,8 @@ import os
 import re
 import secrets
 import time
+import unicodedata
+import regex
 from dataclasses import dataclass, field
 from aiohttp import web, WSMsgType
 
@@ -24,6 +26,9 @@ class Guest:
     consent: bool = False
     host_consent: bool = False
     turn_issued: bool = False
+    turn_issued_at: float = -1000
+    profile: dict = field(default_factory=dict)
+    capabilities: list = field(default_factory=list)
 
 
 @dataclass
@@ -33,14 +38,33 @@ class Room:
     challenge: str
     guests: dict = field(default_factory=dict)
     expiry: float | None = None
+    profile: dict = field(default_factory=dict)
+    capabilities: list = field(default_factory=list)
+
+
+def participant_profile(message):
+    value = message.get('profile', {})
+    if not isinstance(value, dict): raise ValueError()
+    name = value.get('nickname', '')
+    avatar = value.get('avatar', 0)
+    if not isinstance(name, str) or not isinstance(avatar, int) or isinstance(avatar, bool) or not 0 <= avatar < 10: raise ValueError()
+    name = unicodedata.normalize('NFC', name).strip()
+    if name and (len(name) > 80 or len(regex.findall(r'\X', name)) > 10 or any(unicodedata.category(c) in ('Cc','Cf','Zl','Zp') for c in name)): raise ValueError()
+    return {'nickname': name, 'avatar': avatar}
+
+
+def capabilities(message):
+    value = message.get('capabilities', [])
+    return [item for item in ('profile', 'sharing', 'turn-endpoints') if isinstance(value, list) and item in value]
 
 
 class Service:
-    def __init__(self, *, grace=60, clock=time.monotonic, turn_secret="", turn_host=""):
+    def __init__(self, *, grace=60, clock=time.monotonic, turn_secret="", turn_host="", turn_endpoints=None):
         self.rooms = {}
         self.grace, self.clock = grace, clock
         self.turn_secret, self.turn_host = turn_secret, turn_host
         self.rates = {}
+        self.turn_endpoints = turn_endpoints or ([f"turn://{turn_host}:3478", f"turn://{turn_host}:3478?transport=tcp", f"turns://{turn_host}:5349"] if turn_host else [])
 
     async def send(self, ws, **message):
         if ws is not None and not ws.closed:
@@ -108,13 +132,15 @@ class Service:
                         if self.limited(request.remote):
                             await self.send(ws, type="error", code="rate_limit")
                             continue
+                        profile = participant_profile(m)
+                        caps = capabilities(m)
                         if kind == "create":
                             admin = m.get("admin", "")
                             if not isinstance(admin, str) or not HEX.fullmatch(admin) or candidate in self.rooms or len(self.rooms) >= 1000:
                                 await self.send(ws, type="error", code="create_failed")
                                 continue
                             key, role = candidate, "host"
-                            self.rooms[key] = Room(ws, hashlib.sha256(admin.encode()).digest(), challenge)
+                            self.rooms[key] = Room(ws, hashlib.sha256(admin.encode()).digest(), challenge, profile=profile, capabilities=caps)
                             await self.send(ws, type="created")
                         elif kind == "resume":
                             room = self.rooms.get(candidate)
@@ -124,6 +150,7 @@ class Service:
                                 continue
                             key, role = candidate, "host"
                             room.host, room.expiry = ws, None
+                            room.profile, room.capabilities = profile, caps
                             # Rotate host challenge and sessions, so stale traffic cannot be replayed.
                             room.challenge = challenge
                             await self.send(ws, type="created")
@@ -138,9 +165,9 @@ class Service:
                                 await self.send(ws, type="error", code="room_unavailable")
                                 continue
                             key, role, peer_id = candidate, "guest", secrets.token_hex(8)
-                            room.guests[peer_id] = Guest(ws, challenge)
+                            room.guests[peer_id] = Guest(ws, challenge, profile=profile, capabilities=caps)
                             await self.send(ws, type="joined", peer=peer_id)
-                            await self.send(room.host, type="waiting", peer=peer_id)
+                            await self.send(room.host, type="waiting", peer=peer_id, profile=profile, capabilities=caps)
                         else:
                             raise ValueError()
                         continue
@@ -203,8 +230,8 @@ class Service:
     async def ready(self, room, pid):
         guest = room.guests[pid]
         guest.session = secrets.token_hex(16)
-        await self.send(guest.ws, type="ready", peer=pid, session=guest.session, challenge=room.challenge)
-        await self.send(room.host, type="ready", peer=pid, session=guest.session, challenge=guest.challenge)
+        await self.send(guest.ws, type="ready", peer=pid, session=guest.session, challenge=room.challenge, profile=room.profile, capabilities=room.capabilities)
+        await self.send(room.host, type="ready", peer=pid, session=guest.session, challenge=guest.challenge, profile=guest.profile, capabilities=guest.capabilities)
 
     async def forward(self, room, pid, m, from_host):
         guest = room.guests[pid]
@@ -215,22 +242,23 @@ class Service:
 
     async def turn(self, room, pid):
         guest = room.guests[pid]
-        if not (guest.consent and guest.host_consent) or guest.turn_issued:
+        if not guest.approved or not (guest.consent and guest.host_consent) or (guest.turn_issued and self.clock() - guest.turn_issued_at < 30):
             return
         if not self.turn_secret or not self.turn_host:
             for ws in (room.host, guest.ws):
                 await self.send(ws, type="error", code="turn_unavailable", peer=pid)
             return
         guest.turn_issued = True
+        guest.turn_issued_at = self.clock()
         username = f"{int(time.time()) + 3600}:{secrets.token_hex(8)}"
         password = base64.b64encode(hmac.new(self.turn_secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
         for ws in (room.host, guest.ws):
             await self.send(ws, type="turn", peer=pid, username=username, password=password,
-                            host=self.turn_host, expires=3600)
+                            host=self.turn_host, expires=3600, endpoints=self.turn_endpoints)
 
 
 def application(service=None):
-    service = service or Service(turn_secret=os.getenv("TURN_SECRET", ""), turn_host=os.getenv("TURN_HOST", ""))
+    service = service or Service(turn_secret=os.getenv("TURN_SECRET", ""), turn_host=os.getenv("TURN_HOST", ""), turn_endpoints=json.loads(os.getenv("TURN_ENDPOINTS", "null")))
     app = web.Application(client_max_size=131072)
     app.router.add_get("/ws", service.websocket)
     async def health(_):

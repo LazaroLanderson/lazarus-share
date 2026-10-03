@@ -89,7 +89,8 @@ void Capture::start(int monitor, Quality quality, bool testPattern) {
 }
 void Capture::quality(Quality quality) {
     quality_ = quality;
-    QSize fit = sourceSize_.scaled(QSize(quality.width, quality.height), Qt::KeepAspectRatio);
+    QSize fit = sourceSize_;
+    if (fit.width() > quality.width || fit.height() > quality.height) fit.scale(QSize(quality.width, quality.height), Qt::KeepAspectRatio);
     dimensions_ = QSize(qMax(2, fit.width() & ~1), qMax(2, fit.height() & ~1));
     if (filter_) {
         auto *caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, rawFormat_.toUtf8().constData(), "width", G_TYPE_INT, dimensions_.width(),

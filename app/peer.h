@@ -31,6 +31,7 @@ signals:
     void status(QString state);
     void metrics(QJsonObject values);
     void error(QString message);
+    void transportError();
 private:
     static void offerNeeded(GstElement *, gpointer);
     static void descriptionCreated(GstPromise *, gpointer);
@@ -59,5 +60,6 @@ private:
     int pollCount_ = 0;
     int localCandidates_ = 0, remoteCandidates_ = 0;
     QString encoderName_;
-    QString stage_ = "new";
+    QString stage_ = "new", iceState_ = "new", gatheringState_ = "new", dtlsState_ = "unknown";
+    QJsonObject localCounts_, remoteCounts_;
 };

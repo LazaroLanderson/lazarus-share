@@ -16,6 +16,7 @@ public:
     void stop();
     void quality(Quality quality);
     GstSample *takeVideo();
+    QSize sourceSize() const { return sourceSize_; }
     QSize dimensions() const { return dimensions_; }
 signals:
     void ready();

@@ -28,6 +28,7 @@ jobs:
             echo 'Native audio isolation needs WirePlumber 0.5; this runner has an older version.'
           fi
       - run: python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt && .venv/bin/python -m unittest discover -s server/tests -v
+      - run: .venv/bin/python server/tests/automatic_relay.py
       - run: .venv/bin/python server/tests/session_local.py --four-viewers
       - run: .venv/bin/python server/tests/local_tls.py
       - run: python3 packaging/linux/bundle.py
@@ -57,7 +58,7 @@ jobs:
             mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad
             mingw-w64-x86_64-libnice mingw-w64-x86_64-python mingw-w64-x86_64-openssl
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
-      - run: ctest --test-dir build -R protocol --output-on-failure
+      - run: ctest --test-dir build -R "protocol|profile" --output-on-failure
       - run: python packaging/windows/test_tls.py
       - run: python packaging/windows/bundle.py
       - name: Test portable Windows startup without development runtime

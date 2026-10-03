@@ -75,3 +75,8 @@ Desktop.ini
 
 # Deployment state lives on the VPS
 /.deploy/
+
+# ACME credentials, certificates and challenge files
+/infra/acme/
+/infra/acme-webroot/
+*.jsonl

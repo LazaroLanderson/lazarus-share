@@ -65,11 +65,11 @@ jobs:
           VPS_DEPLOY_MODE=${VPS_DEPLOY_MODE:-signaling}
           [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
           [[ "$VPS_DEPLOY_PATH" =~ ^/[A-Za-z0-9/_.-]+$ ]]
-          [[ "$VPS_DEPLOY_MODE" == full || "$VPS_DEPLOY_MODE" == signaling ]]
+          [[ "$VPS_DEPLOY_MODE" == full || "$VPS_DEPLOY_MODE" == signaling || "$VPS_DEPLOY_MODE" == single ]]
           SIGNAL_IP=${SIGNAL_IP:-0.0.0.0}
           SIGNAL_TLS_MODE=${SIGNAL_TLS_MODE:-system}
           [[ "$SIGNAL_TLS_MODE" == system || "$SIGNAL_TLS_MODE" == pinned ]]
-          if [[ "$VPS_DEPLOY_MODE" == signaling ]]; then
+          if [[ "$VPS_DEPLOY_MODE" == signaling || "$VPS_DEPLOY_MODE" == single ]]; then
             [[ "$SIGNAL_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo 'Set the SIGNAL_HOST variable to the rooms domain (no https://)'; exit 1; }
             [[ "$SIGNAL_IP" =~ ^[0-9.]+$ ]] || { echo 'SIGNAL_IP must be an IPv4 interface address'; exit 1; }
           else

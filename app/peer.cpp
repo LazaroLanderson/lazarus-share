@@ -121,10 +121,17 @@ void Peer::descriptionCreated(GstPromise *promise, gpointer data) {
     if (desc) gst_webrtc_session_description_free(desc);
     gst_promise_unref(promise);
 }
+static void countCandidate(QJsonObject &counts, const QString &candidate) {
+    auto fields = candidate.split(' ', Qt::SkipEmptyParts);
+    if (fields.size() < 8) return;
+    QString transport = fields[2].toLower(); int at = fields.indexOf("typ");
+    if (at >= 0 && at+1 < fields.size()) { auto type = fields[at+1]; if (QStringList{"host","srflx","prflx","relay"}.contains(type)) counts[type] = counts[type].toInt() + 1; }
+    if (transport == "udp" || transport == "tcp") counts[transport] = counts[transport].toInt() + 1;
+}
 void Peer::iceCandidate(GstElement *, guint line, gchar *candidate, gpointer data) {
     auto *self = static_cast<Peer *>(data);
     QJsonObject message{{"kind", "ice"}, {"line", int(line)}, {"candidate", QString::fromUtf8(candidate)}};
-    QMetaObject::invokeMethod(self, [self, message] { ++self->localCandidates_; emit self->outgoing(message); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(self, [self, message] { ++self->localCandidates_; countCandidate(self->localCounts_, message["candidate"].toString()); emit self->outgoing(message); }, Qt::QueuedConnection);
 }
 void Peer::receive(const QJsonObject &m) {
     if (!rtc_) return;
@@ -134,7 +141,7 @@ void Peer::receive(const QJsonObject &m) {
         int line = m["line"].toInt(-1);
         auto candidate = m["candidate"].toString().toUtf8();
         if (line >= 0 && line < 2 && candidate.size() < 2048)
-            { ++remoteCandidates_; g_signal_emit_by_name(rtc_, "add-ice-candidate", guint(line), candidate.constData()); }
+            { ++remoteCandidates_; countCandidate(remoteCounts_, QString::fromUtf8(candidate)); g_signal_emit_by_name(rtc_, "add-ice-candidate", guint(line), candidate.constData()); }
     } else if ((kind == "offer" && !host_) || (kind == "answer" && host_)) {
         auto text = m["sdp"].toString().toUtf8();
         if (text.size() > 65536 || !text.contains("a=fingerprint:") || remoteSet_) { emit error("SDP inválido ou inesperado."); return; }
@@ -235,7 +242,10 @@ void Peer::poll() {
         if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR) {
             GError *e = nullptr; gchar *debug = nullptr; gst_message_parse_error(msg, &e, &debug);
             // Raw debug strings can contain SDP or device identifiers; never export them.
-            emit error(QString::fromUtf8(e->message)); g_error_free(e); g_free(debug);
+            QString source = QString::fromUtf8(GST_OBJECT_NAME(GST_MESSAGE_SRC(msg)));
+            if (source.startsWith("nice") || source.startsWith("dtls") || source.startsWith("rtc")) emit transportError();
+            else emit error(QString::fromUtf8(e->message));
+            g_error_free(e); g_free(debug);
         } else emit error("Fluxo encerrado.");
         gst_message_unref(msg);
     }
@@ -243,9 +253,33 @@ void Peer::poll() {
     GstWebRTCPeerConnectionState state; g_object_get(rtc_, "connection-state", &state, nullptr);
     const char *states[] = {"new", "connecting", "connected", "disconnected", "failed", "closed"};
     stage_ = state >= 0 && state <= GST_WEBRTC_PEER_CONNECTION_STATE_CLOSED ? QString::fromLatin1(states[state]) : "unknown";
+    GstWebRTCICEConnectionState ice; GstWebRTCICEGatheringState gathering;
+    g_object_get(rtc_, "ice-connection-state", &ice, "ice-gathering-state", &gathering, nullptr);
+    const char *iceStates[] = {"new","checking","connected","completed","failed","disconnected","closed"};
+    const char *gatheringStates[] = {"new","gathering","complete"};
+    iceState_ = int(ice) >= 0 && int(ice) < 7 ? iceStates[int(ice)] : "unknown";
+    gatheringState_ = int(gathering) >= 0 && int(gathering) < 3 ? gatheringStates[int(gathering)] : "unknown";
     bool now = state == GST_WEBRTC_PEER_CONNECTION_STATE_CONNECTED;
     if (now != connected_) { connected_ = now; emit status(now ? "Conectado" : "Reconectando"); }
-    if (++pollCount_ % 20 == 0) stats();
+    if (++pollCount_ % 20 == 0) {
+        GArray *transceivers=nullptr; g_signal_emit_by_name(rtc_,"get-transceivers",&transceivers);
+        if(transceivers) {
+            for(guint i=0;i<transceivers->len;++i) {
+                auto *transceiver=g_array_index(transceivers,GstWebRTCRTPTransceiver *,i);
+                GObject *sender=nullptr,*receiver=nullptr,*transport=nullptr;
+                g_object_get(transceiver,"sender",&sender,"receiver",&receiver,nullptr);
+                if(sender)g_object_get(sender,"transport",&transport,nullptr);
+                if(!transport && receiver)g_object_get(receiver,"transport",&transport,nullptr);
+                if(transport) { GstWebRTCDTLSTransportState dtls; g_object_get(transport,"state",&dtls,nullptr);
+                    const char *names[]={"new","closed","failed","connecting","connected"};
+                    if(int(dtls)>=0 && int(dtls)<5)dtlsState_=names[int(dtls)]; g_object_unref(transport);
+                }
+                if(sender)g_object_unref(sender); if(receiver)g_object_unref(receiver);
+            }
+            g_array_unref(transceivers);
+        }
+        stats();
+    }
 }
 static double number(const GstStructure *s, const char *key) {
     auto *v = gst_structure_get_value(s, key); if (!v) return 0;
@@ -262,7 +296,7 @@ void Peer::stats() {
     auto *p = gst_promise_new_with_change_func([](GstPromise *promise, gpointer data) {
         QPointer<Peer> self = *static_cast<QPointer<Peer> *>(data);
         auto *reply = gst_promise_get_reply(promise); QJsonObject values;
-        double bytes = 0, lost = 0, packets = 0, rtt = 0; QString route = "Verificando";
+        double bytes = 0, lost = 0, packets = 0, rtt = 0; QString dtls = "unknown"; bool selected = false; QString route = "Verificando";
         if (reply) {
             for (int i = 0; i < gst_structure_n_fields(reply); ++i) {
                 auto *v = gst_structure_get_value(reply, gst_structure_nth_field_name(reply, i));
@@ -274,6 +308,7 @@ void Peer::stats() {
                 if (self->host_ && type == GST_WEBRTC_STATS_OUTBOUND_RTP) { bytes += number(s, "bytes-sent"); packets += number(s, "packets-sent"); }
                 if (type == GST_WEBRTC_STATS_REMOTE_INBOUND_RTP) { lost += number(s, "packets-lost"); rtt = qMax(rtt, number(s, "round-trip-time")); }
                 if (type == GST_WEBRTC_STATS_TRANSPORT) {
+                    const char *dtlsValue = gst_structure_get_string(s, "dtls-state"); if (dtlsValue) dtls = QString::fromLatin1(dtlsValue);
                     const char *pairId = gst_structure_get_string(s, "selected-candidate-pair-id");
                     auto *pv = pairId ? gst_structure_get_value(reply, pairId) : nullptr;
                     auto *pair = pv && GST_VALUE_HOLDS_STRUCTURE(pv) ? gst_value_get_structure(pv) : nullptr;
@@ -288,12 +323,12 @@ void Peer::stats() {
                                 relay |= ct && !strcmp(ct, "relay");
                             }
                         }
-                        route = relay ? "Relay criptografado" : "P2P direto";
+                        selected = true; route = relay ? "Relay criptografado" : "P2P direto";
                     }
                 }
             }
         }
-        values = {{"bytes", bytes}, {"lost", lost}, {"packets", packets}, {"rtt_ms", rtt * 1000}, {"route", route}};
+        values = {{"bytes", bytes}, {"lost", lost}, {"packets", packets}, {"rtt_ms", rtt * 1000}, {"route", route}, {"dtls_state", dtls}, {"selected_pair", selected}};
         if (self) QMetaObject::invokeMethod(self, [self, values] { if (self) self->applyStats(values); }, Qt::QueuedConnection);
         gst_promise_unref(promise);
     }, context, [](gpointer p) { delete static_cast<QPointer<Peer> *>(p); });
@@ -312,7 +347,7 @@ void Peer::applyStats(const QJsonObject &v) {
     }
     double seconds = qMax<qint64>(1, statsTime_.restart()) / 1000.0;
     double videoFps = (host_ ? encodedFrames_.exchange(0) : decodedFrames_.exchange(0)) / seconds;
-    emit metrics({{"video_fps", videoFps},{"route", v["route"]}, {"kbps", kbps}, {"loss_percent", loss * 100},
+    emit metrics({{"video_fps", videoFps},{"route", connected_ && v["selected_pair"].toBool() ? v["route"] : QJsonValue("Verificando")}, {"selected_pair", v["selected_pair"]}, {"dtls_state", dtlsState_}, {"ice_state", iceState_}, {"gathering_state", gatheringState_}, {"local_description", offered_ || remoteSet_}, {"remote_description", remoteSet_}, {"candidate_counts", QJsonObject{{"local",localCounts_},{"remote",remoteCounts_}}}, {"bytes",v["bytes"]}, {"packets",v["packets"]}, {"kbps", kbps}, {"loss_percent", loss * 100},
                   {"rtt_ms", v["rtt_ms"]}, {"encoder", encoderName_}, {"encoder_kbps", currentKbps_}, {"width", quality_.width}, {"height", quality_.height},
                   {"local_candidates", localCandidates_}, {"remote_candidates", remoteCandidates_}, {"stage", stage_}});
 }

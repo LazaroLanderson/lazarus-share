@@ -2,6 +2,8 @@
 #include "audio.h"
 #include "capture.h"
 #include "protocol.h"
+#include "profile.h"
+#include "diagnostic.h"
 #include <QMainWindow>
 #include <QWebSocket>
 #include <QLineEdit>
@@ -16,14 +18,22 @@
 class Window : public QMainWindow {
     Q_OBJECT
 public:
-    Window();
+    explicit Window(bool onboarding = true);
     ~Window() override;
 private:
+#ifdef LAZARUS_TESTING
+    friend struct WindowTestAccess;
+    int blockedTransport_ = -2;
+#endif
     struct Connection {
         Protocol::Channel channel;
         std::unique_ptr<Peer> media;
         bool localConsent = false, remoteConsent = false, failed = false;
         QStringList turns;
+        QString nickname, session, lastRoute;
+        int avatar = 0, transport = -1, reconnectAttempts = 0;
+        qint64 turnExpiry = 0;
+        bool fatalMedia = false, exhausted = false, relayRequested = false, everConnected = false, modern = false;
         int generation = 1, retries = 0;
         int pendingRestart = 0;
         QJsonArray pendingSignals;
@@ -32,6 +42,14 @@ private:
         QString route = "Negociando P2P";
         QJsonObject metrics;
     };
+    void editIdentity();
+    void updateIdentity();
+    void share();
+    void stopSharing();
+    void restart(const QString &id, int transport);
+    void requestRelay(const QString &id);
+    void advance(const QString &id);
+    void log(const QString &event, const QString &id = {}, QJsonObject fields = {});
     void create();
     void join();
     void stop();
@@ -52,7 +70,10 @@ private:
     void notice(const QString &message);
     QLineEdit *token_;
     QString endpoint_, stun_, tlsPin_;
-    QComboBox *monitor_;
+    QComboBox *monitor_, *preset_;
+    QPushButton *identity_, *share_, *pause_, *change_;
+    Profile profile_;
+    DiagnosticLog log_;
     QSpinBox *width_, *height_, *fps_, *bitrate_;
     QListWidget *viewers_, *apps_;
     QPushButton *create_, *join_, *stop_, *approve_, *remove_, *relay_;
@@ -62,6 +83,7 @@ private:
     Audio audio_;
     QTimer frameTimer_, maintenance_;
     QElapsedTimer time_;
+    bool sharing_ = false, capturePending_ = false;
     bool active_ = false, host_ = false, created_ = false, refreshingAudio_ = false, testPattern_ = false;
     QByteArray secret_;
     QString room_, admin_, challenge_, viewerId_;

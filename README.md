@@ -4,13 +4,13 @@
 
 O host captura um monitor, aprova quem entra e transmite para até quatro viewers.
 O vídeo e o áudio seguem diretamente entre os computadores quando a rede permite.
-Se a conexão direta falhar, o app oferece um relay criptografado, ativado somente
-com autorização explícita do host e daquele viewer.
+Na versão 0.2.0, o relay criptografado entra automaticamente após falha direta,
+quando host e viewer autorizaram essa possibilidade no perfil local.
 
 Sem contas, telemetria, anúncios, gravação ou histórico de salas no servidor.
 O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
-> **Versão atual: 0.1.4, experimental.** O caminho Linux/Intel foi testado
+> **Fonte: 0.2.0 em preparação; download público atual: 0.1.4, experimental.** O caminho Linux/Intel foi testado
 > localmente. O EXE Windows foi recompilado nativamente e passou no teste de
 > abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
@@ -56,7 +56,7 @@ Windows 10/11 ainda precisam de testes em equipamentos reais.
 | Salas | Convite aleatório de 128 bits, apresentado como token de 26 caracteres |
 | Aprovação | O host aprova cada viewer, pode removê-lo e encerra a sala |
 | Viewers | Até quatro conexões aprovadas simultâneas |
-| Qualidade | Largura/altura máximas, FPS alvo e teto de bitrate por viewer |
+| Qualidade | Presets Baixa (720p/30), Alta (1080p/60) e Nativo |
 | Vídeo | H.264 por hardware quando o teste do encoder passa; VP8 por CPU como alternativa |
 | Áudio | Desligado inicialmente; somente aplicativos selecionados pelo host |
 | Conexão | WebRTC P2P, com STUN configurável e TURN somente após dupla autorização |
@@ -118,8 +118,10 @@ Os arquivos gerados são:
 
 Os builds locais ficam em `dist/`, que não é versionado. Depois de publicados,
 os executáveis devem ser distribuídos pelos assets de uma **Release** do GitHub.
-O projeto ainda não fornece um endereço público de sinalização embutido; é
-necessário configurar seu próprio servidor, inclusive para o teste inicial.
+A 0.2.0 usa internamente `share.app.lazaruslabs.com.br`, hospedado pelo proprietário
+na sua VPS. Servidor/STUN/certificado ficam ocultos na interface. Para desenvolvimento,
+use `LAZARUS_SIGNAL_URL`, `LAZARUS_STUN_URL` e `LAZARUS_TLS_PIN`; não há download
+de configuração ao abrir. A ativação pública depende do DNS e do certificado.
 
 ### Linux
 
@@ -215,32 +217,41 @@ para transformar o servidor de teste em serviço público.
 
 ## Criar sala e compartilhar
 
-1. Configure o mesmo servidor nos dois clientes.
-2. No host, ajuste resolução máxima, FPS e bitrate. Para diagnóstico, marque
-   **Vídeo de teste** antes de criar a sala.
-3. Clique **Criar sala**. Em captura real Wayland, selecione o monitor no diálogo
-   do sistema; em X11/Windows, use a seleção de monitor do app.
-4. Clique **Copiar token** e envie o convite ao viewer por um meio confiável.
-5. No viewer, cole o token e clique **Entrar com token**.
-6. No host, selecione a solicitação na lista e clique **Aprovar**. O vídeo começa
-   após aprovação e negociação.
-7. Para transmitir áudio, marque somente os aplicativos autorizados. Microfone
-   não faz parte desta versão. Aplicativos novos ou reiniciados exigem nova seleção.
-8. Use **Aplicar** para alterar a qualidade durante a sessão e **Remover** para
-   encerrar a conexão de um viewer.
-9. Se a tentativa direta falhar e seu servidor tiver TURN configurado, host e
-   viewer podem clicar **Autorizar relay**. A autorização vale para aquela conexão;
-   o app não habilita relay silenciosamente.
-10. Use **Encerrar / sair** no host para encerrar a sala.
+1. No primeiro uso, escolha nickname (até 10 caracteres), uma das 10 cores de avatar
+   e se permite relay automático. O perfil fica salvo somente no PC; clique no nome
+   no canto superior direito para editar.
+2. Clique **Criar sala**: nenhuma tela ou áudio é capturado nesse momento.
+3. Copie o token e envie ao contato. Ele cola o convite e clica **Entrar com token**.
+4. Aprove cada solicitação pelo nickname. Nomes não são verificados e podem repetir;
+   confirme a identidade com seu contato antes de aprovar.
+5. Clique **Compartilhar tela**, escolha qualidade e monitor. No Wayland, o sistema
+   abre o seletor de captura. Cancelar não inicia transmissão.
+6. Marque apenas os aplicativos cujo áudio deseja transmitir. Novos processos precisam
+   de nova seleção. Microfone não faz parte desta versão.
+7. **Monitor / qualidade** permite ajustes. **Parar compartilhamento** interrompe
+   tela e áudio e preserva sala, convite e participantes. Retomar exige novo clique.
+8. Se P2P falhar, o app tenta relay por UDP, TCP e TLS, somente quando ambos permitirem.
+   **Tentar novamente** reinicia uma conexão que falhou; **Remover** desconecta um viewer.
+9. **Encerrar / sair** encerra a sala no host.
 
-Sem contas, a solicitação identifica o viewer por um ID temporário. Confirme com
-seu contato qual solicitação aprovar; o token não prova a identidade da pessoa.
+## Perfil e diagnósticos locais
+
+Nickname, avatar e preferência de relay persistem no PC, sem conta. Diagnósticos
+estruturados ficam por até 7 dias e 10 MB. Incluem nicknames, correlação de sessão,
+versão/build, estados de negociação e métricas, inclusive depois que a sala fecha.
+Não incluem IPs, tokens, credenciais, SDP bruto, caminhos pessoais ou mídia.
+**Exportar diagnóstico** salva o relatório manualmente; **Apagar diagnósticos locais**
+remove os eventos. Nenhum relatório é enviado automaticamente.
 
 ## Qualidade e aceleração
 
 O padrão é **1920×1080, 60 FPS e teto de 8.000 kbps por viewer**. Esses valores são
 alvos, não uma promessa de desempenho. A resolução preserva a proporção dentro
-da largura e altura máximas. O bitrate pode cair em resposta ao congestionamento.
+do preset e não amplia monitores menores. O bitrate pode cair por congestionamento.
+
+Baixa usa 720p/30 e teto de 3 Mbps; Alta usa 1080p/60 e 8 Mbps. Nativo usa os
+pixels reais do monitor a 60 FPS, com teto proporcional entre 8 e 40 Mbps por viewer.
+Nativo pode exigir muita banda e processamento; os alvos não garantem desempenho.
 
 Cada viewer consome upload do host. Com quatro viewers próximos ao teto padrão,
 só o vídeo pode chegar a aproximadamente 32 Mbps de upload, além de áudio e
@@ -272,10 +283,10 @@ de salas. Não significa que uma conexão de rede funcione sem processar IPs.
 
 | Componente | O que processa |
 | --- | --- |
-| Cliente | Captura autorizada, convite e negociação; cache técnico local de plugins |
+| Cliente | Captura autorizada, convite, negociação, perfil e diagnóstico técnico local limitado |
 | Sinalização | Identificador derivado da sala, conexões, aprovação e negociação em memória; pode ver IPs e candidatos ICE |
 | Relay | Endpoints e volume de tráfego; encaminha mídia criptografada |
-| Diagnóstico manual | Métricas e capacidades, com segredos e dados sensíveis removidos; sem envio automático |
+| Diagnóstico local | Eventos por até 7 dias/10 MB, com nicknames e sem IPs/segredos; exportação somente manual |
 
 O segredo do convite permanece nos clientes. O servidor recebe um identificador
 derivado; a credencial de administração é separada do convite. As mensagens de

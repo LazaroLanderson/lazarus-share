@@ -21,7 +21,7 @@ def plain(value):
 
 
 class Firewall(unittest.TestCase):
-    def execute(self, *, apply=False, etag='revision', allowed=False, public_ip='192.0.2.1', stun=False):
+    def execute(self, *, apply=False, etag='revision', allowed=False, public_ip='192.0.2.1', stun=False, relay=False):
         rule = Obj(protocol='6', source='0.0.0.0/0', source_type='CIDR_BLOCK', is_stateless=False,
                    tcp_options=Obj(source_port_range=None, destination_port_range=Obj(min=443 if allowed else 22, max=443 if allowed else 22)))
         original = Obj(ingress_security_rules=[rule], egress_security_rules=[Obj(protocol='all', destination='0.0.0.0/0')])
@@ -46,6 +46,7 @@ class Firewall(unittest.TestCase):
         argv = ['oracle_https', '--public-ip', '192.0.2.1'] + (['--apply'] if apply else [])
         if stun:
             argv.append('--stun')
+        if relay: argv.append("--relay")
         error = None
         with patch.dict('sys.modules', {'oci': sdk}), patch('sys.argv', argv), \
                 patch.object(module, 'metadata', return_value=[{'nicIndex': 0, 'vnicId': 'own-vnic'}]), \
@@ -85,6 +86,18 @@ class Firewall(unittest.TestCase):
         self.assertEqual(rule.udp_options.destination_port_range.min, 3478)
         self.assertEqual(rule.udp_options.destination_port_range.max, 3478)
         self.assertEqual(details.egress_security_rules, original.egress_security_rules)
+
+    def test_relay_adds_only_bounded_ports_preserving_teamspeak_and_egress(self):
+        original,calls,error=self.execute(apply=True,allowed=True,relay=True)
+        self.assertIsNone(error)
+        details=calls[0][1]
+        self.assertEqual(details.ingress_security_rules[0],original.ingress_security_rules[0])
+        self.assertEqual(details.egress_security_rules,original.egress_security_rules)
+        actual=[]
+        for rule in details.ingress_security_rules[1:]:
+            options=rule.tcp_options if rule.protocol=='6' else rule.udp_options
+            actual.append((rule.protocol,options.destination_port_range.min,options.destination_port_range.max))
+        self.assertEqual(actual,[('6',80,80),('6',3478,3478),('6',5349,5349),('17',3478,3478),('17',49160,49200)])
 
     def test_missing_etag_or_wrong_vps_refuses_update(self):
         for kwargs in ({'etag': None}, {'public_ip': '192.0.2.2'}):
