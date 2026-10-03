@@ -83,6 +83,6 @@ VideoEncoder selectVideoEncoder(int fps,int kbps,int width,int height,bool softw
     }
     auto *factory=gst_element_factory_find("vp8enc");if(!factory){result.name="Software indisponível";return result;}gst_object_unref(factory);
     result.factory="vp8enc";
-    result.chain=QString("vp8enc name=encoder deadline=1 cpu-used=6 threads=4 lag-in-frames=0 end-usage=cbr buffer-size=1000 buffer-initial-size=200 buffer-optimal-size=500 overshoot=10 keyframe-max-dist=%1 target-bitrate=%2").arg(fps).arg(kbps*1000);
+    result.chain=QString("vp8enc name=encoder deadline=1 cpu-used=8 threads=4 lag-in-frames=0 end-usage=cbr buffer-size=1000 buffer-initial-size=200 buffer-optimal-size=500 overshoot=10 keyframe-max-dist=%1 target-bitrate=%2").arg(fps).arg(kbps*1000);
     return result;
 }
