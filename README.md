@@ -10,7 +10,7 @@ com autorização explícita do host e daquele viewer.
 Sem contas, telemetria, anúncios, gravação ou histórico de salas no servidor.
 O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
-> **Versão atual: 0.1.3, experimental.** O caminho Linux/Intel foi testado
+> **Versão atual: 0.1.4, experimental.** O caminho Linux/Intel foi testado
 > localmente. O EXE Windows foi recompilado nativamente e passou no teste de
 > abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
@@ -19,11 +19,11 @@ O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
 | Plataforma | Executável portátil |
 | --- | --- |
-| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.3/LazarusShare-x86_64.AppImage) |
-| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.3/LazarusShare.exe) |
+| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.4/LazarusShare-x86_64.AppImage) |
+| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.4/LazarusShare.exe) |
 
-[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.1.3)
-· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.3/SHA256SUMS)
+[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.1.4)
+· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.4/SHA256SUMS)
 
 Para testar, configure seu próprio servidor de salas conforme o guia abaixo.
 O EXE Windows foi corrigido após uma falha de biblioteca C++ no primeiro pacote.

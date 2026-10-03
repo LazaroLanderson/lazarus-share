@@ -39,7 +39,7 @@ não colocar réplicas sem um projeto adicional de coordenação.
 
 ## VPS com apenas um IP: salas e P2P
 
-Use `infra/compose.signaling.yml` para começar com HTTPS e sinalização, sem relay.
+Use `infra/compose.signaling.yml` para começar com HTTPS, sinalização e STUN próprio, sem relay.
 A captura e mídia continuam nos PCs; a VPS coordena as salas. Configure
 `SIGNAL_IP=0.0.0.0` para escutar nas interfaces da VPS, ou com um IP atribuído
 à máquina quando quiser limitar a interface. Configure `SIGNAL_HOST` com o domínio das salas,
@@ -48,7 +48,7 @@ por exemplo `salas.seudominio.com`. Crie o registro DNS A apontando para o IP p�
 não são usados nesse modo.
 
 Coloque o certificado e a chave desse domínio em `infra/certs/signal/`, como
-na instalação completa. Libere TCP/443; não publique a porta interna 8080.
+na instalação completa. Libere TCP/443 e UDP/3478; não publique a porta interna 8080.
 Certificados válidos e a porta 443 disponível são pré-requisitos: se a VPS já
 hospeda outros sites, adapte o proxy existente antes de usar este exemplo.
 
@@ -56,9 +56,13 @@ hospeda outros sites, adapte o proxy existente antes de usar este exemplo.
 docker compose --env-file infra/.env -f infra/compose.signaling.yml up -d --build --wait
 ```
 
-Nos dois apps, configure `wss://salas.seudominio.com/ws`, sem pin de certificado
-local. Sem Coturn próprio, configure um STUN público de sua escolha nos clientes;
-este provedor processará metadados da descoberta. O ngrok deixa de ser necessário.
+O app 0.1.4 já inclui a VPS do projeto, STUN e pin temporário; os campos de
+conexão não aparecem na janela. Para migrar a distribuição ao domínio, atualize
+os padrões em `app/window.cpp` e publique novos executáveis. Para testes de
+desenvolvimento, use `LAZARUS_SIGNAL_URL`, `LAZARUS_STUN_URL` e `LAZARUS_TLS_PIN`.
+No domínio com certificado público válido, o pin deve ser vazio. O serviço STUN
+do Compose usa Coturn em `--stun-only`: descobre endereços, mas não permite relay.
+O ngrok deixa de ser necessário.
 Esse modo não supera bloqueios de P2P por relay: o servidor retorna
 `turn_unavailable` se os participantes pedirem relay.
 
@@ -262,6 +266,11 @@ Preserva as entradas e saídas existentes, usa ETag para evitar sobrescrever uma
 alteração concorrente e verifica o resultado. O IP público da VNIC deve coincidir
 com `SIGNAL_HOST`. A ferramenta oficial Oracle é fixada por digest e executada
 temporariamente via Docker; credenciais e OCIDs não são impressos nos logs.
+
+Marque também `stun` para consultar/liberar UDP/3478. Se HTTPS já estiver
+liberado, adiciona somente a regra STUN ausente, preservando as demais regras.
+Valide a descoberta externa e a indisponibilidade de relay com
+`python3 infra/stun_probe.py --host IP_PUBLICO`.
 
 Nos dois apps configure `wss://IP_PUBLICO/ws` e preencha **Certificado local
 (SHA-256)** com a impressão obtida pelo canal SSH confiável. Compartilhe somente
