@@ -74,6 +74,8 @@ private:
     qint64 lastLost_ = 0, lastPackets_ = 0;
     int pollCount_ = 0;
     int localCandidates_ = 0, remoteCandidates_ = 0;
+    std::atomic<unsigned> decoderFrames_{0};
+    QString decoderName_;
     QString encoderName_;
     QString stage_ = "new", iceState_ = "new", gatheringState_ = "new", dtlsState_ = "unknown";
     QJsonObject localCounts_, remoteCounts_;

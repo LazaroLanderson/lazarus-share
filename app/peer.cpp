@@ -195,13 +195,33 @@ void Peer::padAdded(GstElement *, GstPad *pad, gpointer data) {
     if (caps) gst_caps_unref(caps);
     if ((!video && !audio) || self->host_) return;
     GError *error = nullptr;
-    // Never drop RTP fragments: discard only complete decoded frames at appsink.
-    QString receive = video ? QString("queue max-size-buffers=0 max-size-bytes=0 max-size-time=2000000000 ! %1 ! videoconvert ! video/x-raw,format=BGRx ! appsink name=frames emit-signals=true sync=false max-buffers=1 drop=true")
-        .arg(h264 ? "rtph264depay request-keyframe=true wait-for-keyframe=true ! video/x-h264,alignment=au ! h264parse ! openh264dec discard-corrupted-frames=true automatic-request-sync-points=true" : "rtpvp8depay request-keyframe=true wait-for-keyframe=true ! vp8dec") :
-        "queue max-size-time=200000000 leaky=downstream ! rtpopusdepay ! opusdec ! audioconvert ! audioresample ! autoaudiosink sync=false";
-    auto *bin = gst_parse_bin_from_description(receive.toUtf8().constData(), TRUE, &error);
+    // Never drop RTP fragments or compressed references. A bounded decoded-frame
+    // queue separates decoding from conversion and discards complete old images.
+    QString receive = video ? QString("queue name=receive_queue max-size-buffers=0 max-size-bytes=0 max-size-time=2000000000 ! %1 ! queue name=decoded_queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! videoconvert name=video_convert ! video/x-raw,format=BGRx ! appsink name=frames emit-signals=true sync=false max-buffers=1 drop=true")
+        .arg(h264 ? "rtph264depay request-keyframe=true wait-for-keyframe=true ! video/x-h264,alignment=au ! h264parse ! decodebin name=decoder caps=video/x-raw" : "rtpvp8depay request-keyframe=true wait-for-keyframe=true ! vp8dec") :
+        "queue name=receive_queue max-size-time=200000000 leaky=downstream ! rtpopusdepay ! opusdec ! audioconvert ! audioresample ! autoaudiosink sync=false";
+    auto *bin = gst_parse_bin_from_description(receive.toUtf8().constData(), FALSE, &error);
     if (error) { g_error_free(error); if (bin) gst_object_unref(bin); QMetaObject::invokeMethod(self,[self]{emit self->mediaFailure("decoder_error");},Qt::QueuedConnection);return; }
+    // decodebin has a dynamic output: automatic ghosting can expose the raw
+    // converter's sink instead of the RTP queue. Always expose the intended input.
+    auto *inputQueue=gst_bin_get_by_name(GST_BIN(bin),"receive_queue");
+    auto *inputPad=gst_element_get_static_pad(inputQueue,"sink");
+    gst_element_add_pad(bin,gst_ghost_pad_new("sink",inputPad));gst_object_unref(inputPad);gst_object_unref(inputQueue);
     if (video) {
+        auto *decodedQueue=gst_bin_get_by_name(GST_BIN(bin),"decoded_queue");
+        g_signal_connect(decodedQueue,"overrun",G_CALLBACK(+[](GstElement *,gpointer data){++static_cast<Peer *>(data)->displayDrops_;}),self);
+        auto *decodedPad=gst_element_get_static_pad(decodedQueue,"sink");
+        gst_pad_add_probe(decodedPad,GST_PAD_PROBE_TYPE_BUFFER,[](GstPad *,GstPadProbeInfo *,gpointer data){++static_cast<Peer *>(data)->decoderFrames_;return GST_PAD_PROBE_OK;},self,nullptr);
+        gst_object_unref(decodedPad);gst_object_unref(decodedQueue);
+        if(auto *decoder=gst_bin_get_by_name(GST_BIN(bin),"decoder")){
+            g_object_set(decoder,"force-sw-decoders",qEnvironmentVariable("LAZARUS_VIDEO_DECODER")=="software",nullptr);
+            g_signal_connect(decoder,"deep-element-added",G_CALLBACK(+[](GstBin *,GstBin *,GstElement *element,gpointer data){
+                auto *factory=gst_element_get_factory(element);const char *klass=factory?gst_element_factory_get_metadata(factory,GST_ELEMENT_METADATA_KLASS):nullptr;
+                if(!klass || !strstr(klass,"Decoder") || !strstr(klass,"Video"))return;
+                QString name=QString::fromUtf8(gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory)));
+                auto *peer=static_cast<Peer *>(data);QMetaObject::invokeMethod(peer,[peer,name]{peer->decoderName_=name;},Qt::QueuedConnection);
+            }),self);gst_object_unref(decoder);
+        }else QMetaObject::invokeMethod(self,[self]{self->decoderName_="vp8dec";},Qt::QueuedConnection);
         auto *sink = gst_bin_get_by_name(GST_BIN(bin), "frames");
         g_signal_connect(sink, "new-sample", G_CALLBACK(newFrame), self); gst_object_unref(sink);
     }
@@ -366,7 +386,7 @@ void Peer::applyStats(const QJsonObject &v) {
     if(host_ && connected_){currentKbps_=control_.update(loss,v["rtt_ms"].toDouble(),valid);g_object_set(encoder_,bitrateProperty_.constData(),currentKbps_*bitrateMultiplier_,nullptr);}
     unsigned encoded=encodedFrames_.exchange(0),received=decodedFrames_.exchange(0),inputs=inputFrames_.exchange(0);
     double videoFps = (host_ ? encoded : received) / seconds;
-    emit metrics({{"bitrate_changed",previous!=currentKbps_},{"frames_discarded",int(queueDrops_.exchange(0)+displayDrops_.exchange(0))},{"frames_pending_estimate",int(inputs>encoded?inputs-encoded:0)},{"feedback_valid",valid},{"video_fps", videoFps},{"route", connected_ && v["selected_pair"].toBool() ? v["route"] : QJsonValue("Verificando")}, {"selected_pair", v["selected_pair"]}, {"dtls_state", dtlsState_}, {"ice_state", iceState_}, {"gathering_state", gatheringState_}, {"local_description", offered_ || remoteSet_}, {"remote_description", remoteSet_}, {"candidate_counts", QJsonObject{{"local",localCounts_},{"remote",remoteCounts_}}}, {"bytes",v["bytes"]}, {"packets",v["packets"]}, {"kbps", kbps}, {"loss_percent", loss * 100},
-                  {"rtt_ms", v["rtt_ms"]}, {"encoder", encoderName_}, {"encoder_kbps", currentKbps_}, {"width", quality_.width}, {"height", quality_.height},
+    emit metrics({{"bitrate_changed",previous!=currentKbps_},{"frames_discarded",int(queueDrops_.exchange(0)+displayDrops_.exchange(0))},{"frames_pending_estimate",int(inputs>encoded?inputs-encoded:0)},{"feedback_valid",valid},{"decoder_fps",decoderFrames_.exchange(0)/seconds},{"video_fps", videoFps},{"route", connected_ && v["selected_pair"].toBool() ? v["route"] : QJsonValue("Verificando")}, {"selected_pair", v["selected_pair"]}, {"dtls_state", dtlsState_}, {"ice_state", iceState_}, {"gathering_state", gatheringState_}, {"local_description", offered_ || remoteSet_}, {"remote_description", remoteSet_}, {"candidate_counts", QJsonObject{{"local",localCounts_},{"remote",remoteCounts_}}}, {"bytes",v["bytes"]}, {"packets",v["packets"]}, {"kbps", kbps}, {"loss_percent", loss * 100},
+                  {"rtt_ms", v["rtt_ms"]}, {"decoder",decoderName_},{"encoder", encoderName_}, {"encoder_kbps", currentKbps_}, {"width", quality_.width}, {"height", quality_.height},
                   {"local_candidates", localCandidates_}, {"remote_candidates", remoteCandidates_}, {"stage", stage_}});
 }

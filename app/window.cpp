@@ -415,7 +415,7 @@ void Window::tick() {
             if (!image.isNull()) {
                 if(c->receivedSize!=image.size()){c->receivedSize=image.size();c->metrics["width"]=image.width();c->metrics["height"]=image.height();}
                 video_->setFrame(image);
-                metrics_->setText(QString("Vídeo recebido: %1×%2 | %3 | %4 FPS decodificados").arg(image.width()).arg(image.height()).arg(c->route).arg(c->metrics["video_fps"].toDouble(),0,'f',1));
+                metrics_->setText(QString("Vídeo recebido: %1×%2 | %3 | %4 FPS disponíveis para exibição").arg(image.width()).arg(image.height()).arg(c->route).arg(c->metrics["video_fps"].toDouble(),0,'f',1));
             }
         }
     }

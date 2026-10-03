@@ -37,6 +37,8 @@ def aggregate(rows):
             'decoded':median(lambda r:min(s['decoded_fps'] for s in r['streams'])),
             'p95':median(lambda r:max(s['latency_p95_ms'] for s in r['streams'])),
             'rss_change':median(lambda r:r['host']['rss_change_mib']),
+            'decoder':sorted({e for r in rows for s in r['streams'] for e in s.get('decoder',[])}),
+            'cpu_ms_per_frame':median(lambda r:r['host']['cpu_pct']*10/max(.01,sum(s['encoded_fps'] for s in r['streams']))),
             'encoder':sorted({e for r in rows for s in r['streams'] for e in s['encoder']})}
 
 lines=['## Comparação medida','',
@@ -63,18 +65,27 @@ for key,group in sorted(groups.items()):
     before=aggregate([group[('baseline',n)] for n in (1,2,3)]);after=aggregate([group[('current',n)] for n in (1,2,3)])
     lines.append(f'| {key[0]} | {key[1]} | {key[2]} | {before["clients_cpu"]:.1f}% → {after["clients_cpu"]:.1f}% | {before["rss"]:.1f} → {after["rss"]:.1f} MiB | {after["rss_change"]:+.2f} MiB |')
 lines+=['','## Contadores de GPU','',
-        'Tempo de engine/contexto DRM do host; não é utilização global do chip. Viewers raster sem contexto DRM ficam indisponíveis.', '',
-        '| Preset | Viewers | Backend | Engine | 0.2.0 → 0.2.1 |','|---|---:|---|---|---|']
+        'Tempo de engine/contexto DRM; não é utilização global do chip. Valores dos viewers são somados por repetição. Falta de contexto/contador é indisponibilidade, não zero.', '',
+        '| Preset | Viewers | Backend | Processo | Engine | 0.2.0 → 0.2.1 |','|---|---:|---|---|---|---|']
 for key,group in sorted(groups.items()):
     if len(group)!=6:continue
-    counters=sorted({k for row in group.values() for k in row['host'] if k.startswith('gpu_')})
-    if not counters:lines.append(f'| {key[0]} | {key[1]} | {key[2]} | — | indisponível |')
-    for counter in counters:
-        values=[]
-        for version in ('baseline','current'):
-            samples=[group[(version,n)]['host'].get(counter) for n in (1,2,3)]
-            values.append(f'{statistics.median(samples):.1f}%' if all(v is not None for v in samples) else 'indisponível')
-        lines.append(f'| {key[0]} | {key[1]} | {key[2]} | {counter.removeprefix("gpu_").removesuffix("_time_pct")} | {values[0]} → {values[1]} |')
+    for role in ('host','viewers'):
+        def resources(row):return [row['host']] if role=='host' else row['clients']
+        counters=sorted({k for row in group.values() for process in resources(row) for k in process if k.startswith('gpu_')})
+        if not counters:continue
+        for counter in counters:
+            values=[]
+            for version in ('baseline','current'):
+                samples=[sum(p[counter] for p in resources(group[(version,n)]) if counter in p) if any(counter in p for p in resources(group[(version,n)])) else None for n in (1,2,3)]
+                values.append(f'{statistics.median(samples):.1f}%' if all(v is not None for v in samples) else 'indisponível')
+            lines.append(f'| {key[0]} | {key[1]} | {key[2]} | {role} | {counter.removeprefix("gpu_").removesuffix("_time_pct")} | {values[0]} → {values[1]} |')
+lines+=['','## CPU por frame codificado e decoder','',
+        'Normalização complementar; não substitui a meta de custo total do host. Uma versão que produz mais frames pode consumir mais CPU total.', '',
+        '| Preset | Viewers | Backend | CPU host por frame 0.2.0 → 0.2.1 | Decoder 0.2.0 → 0.2.1 |','|---|---:|---|---|---|']
+for key,group in sorted(groups.items()):
+    if len(group)!=6:continue
+    before=aggregate([group[('baseline',n)] for n in (1,2,3)]);after=aggregate([group[('current',n)] for n in (1,2,3)])
+    lines.append(f'| {key[0]} | {key[1]} | {key[2]} | {before["cpu_ms_per_frame"]:.2f} → {after["cpu_ms_per_frame"]:.2f} ms de CPU | {", ".join(before["decoder"])} → {", ".join(after["decoder"])} |')
 lines+=['',f'Cenários completos: {sum(len(g)==6 for g in groups.values())}/18. Incompletos: {len(incomplete)}. Gates para investigar: {len(failures)}. Hardware indisponível: {len(hardware_unavailable)}.']
 output=Path(args.output);output.parent.mkdir(parents=True,exist_ok=True);output.write_text('\n'.join(lines)+'\n')
 print(json.dumps({'complete':sum(len(g)==6 for g in groups.values()),'expected':18,'incomplete':incomplete,'regressions':failures,'hardware_unavailable':hardware_unavailable}))
