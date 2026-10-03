@@ -106,6 +106,8 @@ if(BUILD_TESTING)
  add_executable(media-benchmark app/benchmark.cpp app/peer.cpp app/encoder.cpp app/bitrate.cpp app/frameprep.cpp app/videoview.cpp)
  target_compile_definitions(media-benchmark PRIVATE GST_USE_UNSTABLE_API LAZARUS_TESTING)
  target_link_libraries(media-benchmark PRIVATE Qt6::Widgets Qt6::Network Qt6::OpenGLWidgets PkgConfig::GST)
+ add_executable(display-benchmark app/display_benchmark.cpp app/videoview.cpp)
+ target_link_libraries(display-benchmark PRIVATE Qt6::Widgets Qt6::OpenGLWidgets)
 endif()
 
 foreach(target lazarus-share media-test session-test media-benchmark media-modules-test)
