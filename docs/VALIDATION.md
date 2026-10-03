@@ -192,4 +192,13 @@ passaram. A primeira validação externa confirmou mídia TURN por UDP, mas TCP
 recebeu erro 486: a reserva de 20 MB/s por alocação esgotava o teto global de
 40 MB/s após duas alocações. O teste isolado reproduziu a recusa na terceira
 alocação; a redução para 5 MB/s manteve o teto global e passou com oito alocações
-simultâneas. Aplicação dessa correção na VPS e revalidação TCP/TLS ainda pendentes.
+simultâneas. A correção foi aplicada na VPS e a revalidação externa passou com mídia
+criptografada por UDP, TCP e TLS, além de HTTPS/WSS e aprovação dos participantes.
+
+- [Deploy e teste de oito alocações](https://github.com/LazaroLanderson/lazarus-share/actions/runs/37126645970).
+- [Builds nativos Linux e Windows](https://github.com/LazaroLanderson/lazarus-share/actions/runs/37126645989).
+- [Validação pública HTTPS/WSS e mídia TURN UDP/TCP/TLS](https://github.com/LazaroLanderson/lazarus-share/actions/runs/37126781531).
+
+A VPS executa o commit `461e8022f507f8549cec082ba2b551e7608f34e5`; o timer
+de renovação do certificado está ativo. Testes em PCs reais, Windows 10/11 e
+30 minutos na Dtel continuam pendentes, incluindo o caso específico relatado.

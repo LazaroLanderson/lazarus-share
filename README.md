@@ -10,7 +10,7 @@ quando host e viewer autorizaram essa possibilidade no perfil local.
 Sem contas, telemetria, anúncios, gravação ou histórico de salas no servidor.
 O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
-> **Fonte: 0.2.0 em preparação; download público atual: 0.1.4, experimental.** O caminho Linux/Intel foi testado
+> **Versão 0.2.0, experimental.** O caminho Linux/Intel foi testado
 > localmente. O EXE Windows foi recompilado nativamente e passou no teste de
 > abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
@@ -19,16 +19,16 @@ O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
 | Plataforma | Executável portátil |
 | --- | --- |
-| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.4/LazarusShare-x86_64.AppImage) |
-| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.4/LazarusShare.exe) |
+| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.0/LazarusShare-x86_64.AppImage) |
+| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.0/LazarusShare.exe) |
 
-[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.1.4)
-· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.1.4/SHA256SUMS)
+[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.0)
+· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.0/SHA256SUMS)
 
-Para testar, configure seu próprio servidor de salas conforme o guia abaixo.
-O EXE Windows foi corrigido após uma falha de biblioteca C++ no primeiro pacote.
-Se você baixou antes dessa correção, baixe novamente. Captura e conexão em
-Windows 10/11 ainda precisam de testes em equipamentos reais.
+Para testar, abra o app, configure seu perfil local e crie uma sala ou entre com
+um convite. O servidor da VPS já vem configurado internamente; ambos os PCs
+devem usar a versão nova. Captura e conexão em Windows 10/11 ainda precisam
+de testes em equipamentos reais.
 
 ## Índice
 
@@ -121,7 +121,7 @@ os executáveis devem ser distribuídos pelos assets de uma **Release** do GitHu
 A 0.2.0 usa internamente `share.app.lazaruslabs.com.br`, hospedado pelo proprietário
 na sua VPS. Servidor/STUN/certificado ficam ocultos na interface. Para desenvolvimento,
 use `LAZARUS_SIGNAL_URL`, `LAZARUS_STUN_URL` e `LAZARUS_TLS_PIN`; não há download
-de configuração ao abrir. A ativação pública depende do DNS e do certificado.
+de configuração ao abrir. O servidor público está ativo com certificado ACME e renovação automática.
 
 ### Linux
 
