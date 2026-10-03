@@ -57,7 +57,11 @@ dois serviços. O exemplo supõe IPs diretamente atribuídos, sem NAT na VPS.
 
 O serviço gera credenciais TURN válidas por uma hora; não compartilha o segredo
 de Coturn. A sala limita quatro viewers, Coturn limita oito allocations por
-credencial, 64 no total e 20 MB/s por sessão. Dimensione banda e limites conforme
+credencial, 64 no total e 5 MB/s por alocação. No modo de IP único, o teto global
+é 40 MB/s: o Coturn reserva a quota de cada alocação, mesmo antes do tráfego.
+Esse dimensionamento admite oito alocações simultâneas (quatro pares de participantes).
+O teto inclui overhead de transporte; o bitrate efetivo em Nativo pode ficar abaixo
+do alvo máximo de 40 Mbps. Dimensione banda e limites conforme
 uso real. A versão inicial exige uma nova sessão para renovar autorização e
 credenciais após uma hora; não promete reconexão de relay após esse prazo.
 

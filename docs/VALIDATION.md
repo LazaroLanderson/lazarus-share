@@ -184,3 +184,12 @@ são validados pelo workflow de build; conferir a execução associada à releas
 DNS/certificado público, TURN externo na VPS, testes reais Linux/Windows,
 Windows 10/11 e sessão de 30 minutos na Dtel devem ser registrados quando realizados.
 O caso específico do viewer Windows ainda não foi reproduzido nesta implementação.
+
+### Validação pública em 2026-10-03
+
+DNS direto da VPS, certificado público ACME, renovação programada, deploy e HTTPS
+passaram. A primeira validação externa confirmou mídia TURN por UDP, mas TCP
+recebeu erro 486: a reserva de 20 MB/s por alocação esgotava o teto global de
+40 MB/s após duas alocações. O teste isolado reproduziu a recusa na terceira
+alocação; a redução para 5 MB/s manteve o teto global e passou com oito alocações
+simultâneas. Aplicação dessa correção na VPS e revalidação TCP/TLS ainda pendentes.

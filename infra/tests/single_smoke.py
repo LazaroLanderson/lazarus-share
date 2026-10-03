@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import time
 
+from turn_allocations import verify_allocations
+
 SOURCE=Path(__file__).resolve().parents[2]
 with tempfile.TemporaryDirectory(prefix='lazarus-single-smoke-') as directory:
     root=Path(directory);infra=root/'infra';infra.mkdir();(root/'server').mkdir()
@@ -36,6 +38,7 @@ with tempfile.TemporaryDirectory(prefix='lazarus-single-smoke-') as directory:
         with socket.create_connection(('127.0.0.2',5349),timeout=5) as connection:
             with context.wrap_socket(connection,server_hostname='localhost'):pass
         subprocess.run([os.environ.get('PYTHON','python3'),str(SOURCE/'infra/stun_probe.py'),'--host','127.0.0.2'],check=True)
-        print('Single-IP domain SNI, proxy health, TURN TLS and STUN passed')
+        verify_allocations('127.0.0.2',3478,'isolated-smoke-test-only')
+        print('Single-IP domain SNI, proxy health, TURN TLS, STUN and eight concurrent allocations passed')
     finally:
         subprocess.run(compose+['down','--remove-orphans'],check=False,stdout=subprocess.DEVNULL)
