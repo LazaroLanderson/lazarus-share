@@ -4,6 +4,7 @@
 #include "videoview.h"
 #include "videostats.h"
 #include "mediawatch.h"
+#include "frametime.h"
 #include <gst/webrtc/webrtc.h>
 #include <QApplication>
 #include <gst/gst.h>
@@ -13,6 +14,13 @@
 static void check(bool value,const char *message){if(!value)throw std::runtime_error(message);}
 int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv);
  try {
+    VideoTimeline timeline;
+    check(timeline.map(100*GST_SECOND,GST_SECOND)==GST_SECOND,"Late viewer clock anchor");
+    check(timeline.map(100*GST_SECOND+33333333,GST_SECOND+40000000)==GST_SECOND+33333333,"UI jitter changed capture spacing");
+    check(timeline.map(0,2*GST_SECOND)==2*GST_SECOND,"Capture clock restart");
+    check(timeline.map(GST_CLOCK_TIME_NONE,3*GST_SECOND)==GST_CLOCK_TIME_NONE,"Unknown timestamp was invented");
+    check(timeline.map(33333333,4*GST_SECOND)==4*GST_SECOND,"Missing timestamp did not reanchor");
+    check(timeline.map(66666666,GST_CLOCK_TIME_NONE)==GST_CLOCK_TIME_NONE,"Unknown pipeline clock was invented");
     check(!encoderStalled(9000,8990,2000,2000,false),"Disconnected stall");check(!encoderStalled(9000,7000,2000,2000,true),"Capture pause triggered encoder stall");check(!encoderStalled(6999,6990,2000,2000,true),"Early stall");check(encoderStalled(7000,6990,2000,2000,true),"Five-second stall missing");check(!encoderStalled(7000,6990,6500,2000,true),"Output did not reset watchdog");
     BitrateController rate;for(int i=0;i<20;++i)check(rate.update(0,650,true)==8000,"Stable high RTT degraded bitrate");
     check(rate.update(.05,650,true)==6800,"One severe loss interval");

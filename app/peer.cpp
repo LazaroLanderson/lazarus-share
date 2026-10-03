@@ -244,17 +244,24 @@ GstFlowReturn Peer::newFrame(GstAppSink *sink, gpointer data) {
     gst_sample_unref(sample); return GST_FLOW_OK;
 }
 QImage Peer::takeFrame() { QMutexLocker lock(&frameMutex_); QImage out = frame_; frame_ = {}; return out; }
-void Peer::push(GstElement *source, GstSample *sample) {
+void Peer::push(GstElement *source, GstSample *sample,GstClockTime timestamp) {
     if (!source || !sample) return;
     gst_app_src_set_caps(GST_APP_SRC(source), gst_sample_get_caps(sample));
     GstBuffer *original = gst_sample_get_buffer(sample);
     GstBuffer *buffer = gst_buffer_copy(original);
     // Keep pooled capture memory leased until every encoder releases its copy.
     gst_buffer_add_parent_buffer_meta(buffer, original);
-    GST_BUFFER_PTS(buffer) = GST_CLOCK_TIME_NONE; GST_BUFFER_DTS(buffer) = GST_CLOCK_TIME_NONE;
+    GST_BUFFER_PTS(buffer) = timestamp; GST_BUFFER_DTS(buffer) = GST_CLOCK_TIME_NONE;
     gst_app_src_push_buffer(GST_APP_SRC(source), buffer);
 }
-void Peer::video(GstSample *s) { if(s){++inputFrames_;lastInputMs_=mediaNow();push(video_, s);} }
+void Peer::video(GstSample *s) {
+    if(!s)return;++inputFrames_;lastInputMs_=mediaNow();GstClockTime timestamp=GST_CLOCK_TIME_NONE;
+    auto *clock=gst_element_get_clock(pipeline_);auto base=gst_element_get_base_time(pipeline_);
+    GstClockTime running=GST_CLOCK_TIME_NONE;
+    if(clock){auto now=gst_clock_get_time(clock);gst_object_unref(clock);if(GST_CLOCK_TIME_IS_VALID(base) && now>=base)running=now-base;}
+    timestamp=videoTimeline_.map(GST_BUFFER_PTS(gst_sample_get_buffer(s)),running);
+    push(video_,s,timestamp);
+}
 void Peer::audio(GstSample *s) { push(audio_, s); }
 void Peer::quality(Quality q) {
     quality_ = q; targetKbps_ = q.kbps; currentKbps_ = qMin(currentKbps_, targetKbps_); control_.target(q.kbps);
@@ -383,7 +390,7 @@ void Peer::applyStats(const QJsonObject &v) {
     lastBytes_=bytes;lastPackets_=packets;lastLost_=lost;
     if(!countersValid)control_.resetFeedback();
     int previous=currentKbps_;
-    if(host_ && connected_){currentKbps_=control_.update(loss,v["rtt_ms"].toDouble(),valid);g_object_set(encoder_,bitrateProperty_.constData(),currentKbps_*bitrateMultiplier_,nullptr);}
+    if(host_ && connected_){currentKbps_=control_.update(loss,v["rtt_ms"].toDouble(),valid);if(currentKbps_!=previous)g_object_set(encoder_,bitrateProperty_.constData(),currentKbps_*bitrateMultiplier_,nullptr);}
     unsigned encoded=encodedFrames_.exchange(0),received=decodedFrames_.exchange(0),inputs=inputFrames_.exchange(0);
     double videoFps = (host_ ? encoded : received) / seconds;
     emit metrics({{"bitrate_changed",previous!=currentKbps_},{"frames_discarded",int(queueDrops_.exchange(0)+displayDrops_.exchange(0))},{"frames_pending_estimate",int(inputs>encoded?inputs-encoded:0)},{"feedback_valid",valid},{"decoder_fps",decoderFrames_.exchange(0)/seconds},{"video_fps", videoFps},{"route", connected_ && v["selected_pair"].toBool() ? v["route"] : QJsonValue("Verificando")}, {"selected_pair", v["selected_pair"]}, {"dtls_state", dtlsState_}, {"ice_state", iceState_}, {"gathering_state", gatheringState_}, {"local_description", offered_ || remoteSet_}, {"remote_description", remoteSet_}, {"candidate_counts", QJsonObject{{"local",localCounts_},{"remote",remoteCounts_}}}, {"bytes",v["bytes"]}, {"packets",v["packets"]}, {"kbps", kbps}, {"loss_percent", loss * 100},

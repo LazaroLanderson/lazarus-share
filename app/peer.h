@@ -1,6 +1,7 @@
 #pragma once
 #include "encoder.h"
 #include "bitrate.h"
+#include "frametime.h"
 #include <QObject>
 #include <QImage>
 #include <QJsonObject>
@@ -50,7 +51,7 @@ private:
     void poll();
     void stats();
     void applyStats(const QJsonObject &values);
-    void push(GstElement *source, GstSample *sample);
+    void push(GstElement *source, GstSample *sample,GstClockTime timestamp=GST_CLOCK_TIME_NONE);
     bool host_, offered_ = false, remoteSet_ = false, connected_ = false;
     GstElement *pipeline_ = nullptr, *rtc_ = nullptr, *video_ = nullptr, *audio_ = nullptr, *encoder_ = nullptr,*pay_=nullptr;
     Quality quality_;
@@ -74,6 +75,7 @@ private:
     qint64 lastLost_ = 0, lastPackets_ = 0;
     int pollCount_ = 0;
     int localCandidates_ = 0, remoteCandidates_ = 0;
+    VideoTimeline videoTimeline_;
     std::atomic<unsigned> decoderFrames_{0};
     QString decoderName_;
     QString encoderName_;
