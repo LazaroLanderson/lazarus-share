@@ -50,7 +50,7 @@ O bitrate informado é de vídeo RTP. VP8 usa CBR e o ajuste de velocidade `cpu-
 
 ## Dados e repetição
 
-O código de mídia medido é o commit `9831e744a2ccc76f6d1d8c0039e3200c209137e4`; commits posteriores desta entrega acrescentam ferramenta de exibição, documentação e atualização do rascunho, sem alterar esse caminho de mídia. Os hashes dos executáveis locais estão em cada registro. O binário de benchmark não é o AppImage/EXE do CI.
+O código de mídia medido é o commit `9831e744a2ccc76f6d1d8c0039e3200c209137e4`; commits posteriores desta entrega acrescentam ferramenta de exibição, documentação, verificação/empacotamento do runtime e atualização do rascunho, sem alterar esse caminho de mídia. Os hashes dos executáveis locais estão em cada registro. O binário de benchmark não é o AppImage/EXE do CI.
 
 - [Conjunto final de 108 registros](benchmarks/0.2.1-results.jsonl): reexecutável pelo gerador de relatório, com uma única versão de binário por lado.
 - [Matriz inicial completa](benchmarks/0.2.1-initial-matrix.jsonl): inclui Alta/2/software fora do limite.
@@ -262,3 +262,5 @@ Medianas das três repetições. Bitrate soma somente vídeo RTP dos viewers, se
 | native | 4 | software | 59.40 | 14.32 | 32947 kbps | 356.70 | 0.00 | 0 |
 
 Filas foram verificadas por testes: pool NV12 limitado a oito buffers, fila de imagem crua após decoder limitada a um, filas de envio limitadas e descarte antes da codificação. O teste de exibição lenta confirmou descarte de imagens completas, sem corromper referências H.264. RSS e variação durante 60 segundos estão nas tabelas de recursos e nos dados por processo. Essa janela não comprova ausência de vazamentos em sessões de várias horas. Tempos de preparação/seleção, motivo de fallback e alterações de bitrate aparecem nos eventos estruturados locais; não habilitamos logs brutos nem exportação automática.
+
+A validação dos pacotes exige `decodebin` e também decodifica vídeo H.264 sintético com os plugins empacotados, sem hardware/rede/perfil. Isso detecta dependências ausentes do autoplugging, além de verificar que as fábricas foram registradas. O caminho da interface e os controles de compartilhamento não são acionados nesse teste.
