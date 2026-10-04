@@ -28,7 +28,7 @@ def copy(source, destination):
 scanner = Path("/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner")
 copy(scanner, root / "usr/libexec/gst-plugin-scanner")
 
-for element in ("queue", "appsrc", "webrtcbin", "nicesrc", "dtlssrtpenc", "srtpenc", "rtpbin", "rtpvp8pay", "vp8enc", "opusenc", "audioconvert", "audioresample", "audiomixer", "audiotestsrc", "videotestsrc", "videoconvert", "videoscale", "videorate", "pipewiresrc", "ximagesrc", "autoaudiosink", "pulsesink", "h264parse", "openh264dec"):
+for element in ("queue", "appsrc", "webrtcbin", "nicesrc", "dtlssrtpenc", "srtpenc", "rtpbin", "rtpvp8pay", "vp8enc", "opusenc", "audioconvert", "audioresample", "audiomixer", "audiotestsrc", "videotestsrc", "videoconvert", "videoscale", "videorate", "pipewiresrc", "ximagesrc", "autoaudiosink", "pulsesink", "h264parse", "openh264dec", "decodebin"):
     details = subprocess.check_output(["gst-inspect-1.0", element], text=True)
     source = Path(re.search(r"Filename\s+(\S+)", details)[1])
     destination = libraries / "gstreamer-1.0" / source.name
