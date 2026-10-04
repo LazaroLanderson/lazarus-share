@@ -291,8 +291,9 @@ void Window::message(const QJsonObject &m) {
         // from extending credential validity. Keep the public protocol unchanged.
         bool epochValid=false;
         qint64 epoch=username.section(':',0,0).toLongLong(&epochValid);
+        if (!epochValid || epoch<=c.turnEpoch) return;
         qint64 remaining=epoch-QDateTime::currentSecsSinceEpoch();
-        if (!epochValid || remaining<=0 || epoch<=c.turnEpoch) return;
+        if (remaining<=0) return;
         auto user = QString::fromLatin1(QUrl::toPercentEncoding(username)); auto pass = QString::fromLatin1(QUrl::toPercentEncoding(password));
         c.turns.clear();
         for (auto entry : m["endpoints"].toArray()) {

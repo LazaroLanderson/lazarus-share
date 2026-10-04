@@ -11,7 +11,14 @@
 #include <memory>
 #include <vector>
 struct PeerTestAccess {
-    static unsigned decoded(Peer &peer){return peer.decoderFrames_.load();}
+    static std::shared_ptr<std::atomic<unsigned>> watchFrames(Peer &peer){
+        auto count=std::make_shared<std::atomic<unsigned>>(0);
+        auto *sink=gst_bin_get_by_name(GST_BIN(peer.pipeline_),"frames");if(!sink)return {};
+        auto *pad=gst_element_get_static_pad(sink,"sink");
+        gst_pad_add_probe(pad,GST_PAD_PROBE_TYPE_BUFFER,[](GstPad *,GstPadProbeInfo *,gpointer data){++**static_cast<std::shared_ptr<std::atomic<unsigned>> *>(data);return GST_PAD_PROBE_OK;},
+                          new std::shared_ptr<std::atomic<unsigned>>(count),[](gpointer data){delete static_cast<std::shared_ptr<std::atomic<unsigned>> *>(data);});
+        gst_object_unref(pad);gst_object_unref(sink);return count;
+    }
     static void failEncoder(Peer &peer){auto *failure=g_error_new_literal(GST_STREAM_ERROR,GST_STREAM_ERROR_ENCODE,"Controlled encoder failure");auto *bus=gst_element_get_bus(peer.pipeline_);gst_bus_post(bus,gst_message_new_error(GST_OBJECT(peer.encoder_),failure,nullptr));g_error_free(failure);gst_object_unref(bus);}
 };
 struct WindowTestAccess {
@@ -69,7 +76,7 @@ struct WindowTestAccess {
         return !c.media && c.turnEpoch==epoch && c.turns.isEmpty();
     }
     static void beginRenewal(Window &w){for(auto &[id,c]:w.peers_)c->renewal.requested(w.time_.elapsed());}
-    static unsigned decoded(Window &w){unsigned count=0;for(auto &[id,c]:w.peers_)if(c->media)count+=PeerTestAccess::decoded(*c->media);return count;}
+    static std::shared_ptr<std::atomic<unsigned>> watchFrames(Window &w){return PeerTestAccess::watchFrames(*w.peers_.begin()->second->media);}
     static bool unchanged(Window &w,const std::vector<Snapshot> &saved){for(auto &s:saved){auto &c=*w.peers_.at(s.id);if(c.media.get()!=s.media || c.generation!=s.generation || c.transport!=s.transport)return false;}return true;}
     static bool pausedReply(Window &w){
         for(auto &[id,c]:w.peers_){
@@ -115,13 +122,14 @@ int main(int argc, char **argv) {
     host.findChild<QCheckBox *>()->setChecked(true); button(host,"Criar sala")->click();
     QTimer timer; QElapsedTimer elapsed; elapsed.start(); timer.setInterval(20); int stage=0; qint64 approvedAt=0,renewalAt=0; bool passed=false;std::vector<WindowTestAccess::Snapshot> saved;
     std::vector<std::vector<WindowTestAccess::Snapshot>> guestSaved;
+    std::vector<std::shared_ptr<std::atomic<unsigned>>> frameCounters(count);
     std::vector<unsigned> decoded(count),initialDecoded(count);std::vector<qint64> frameAt(count);qint64 maxGap=0;
     QObject::connect(host.findChild<Capture *>(),&Capture::error,&app,[&](QString){std::cerr<<"Capture failed at stage "<<stage<<'\n';app.quit();});
     QObject::connect(&timer,&QTimer::timeout,&app,[&] {
         if(stage==15 || stage==16){
             for(int i=0;i<count;++i){
                 if(!WindowTestAccess::unchanged(*guests[i],guestSaved[i])){std::cerr<<"Viewer restarted during renewal\n";app.quit();return;}
-                auto frames=WindowTestAccess::decoded(*guests[i]);
+                auto frames=frameCounters[i]->load();
                 if(frames!=decoded[i]){maxGap=qMax(maxGap,elapsed.elapsed()-frameAt[i]);frameAt[i]=elapsed.elapsed();decoded[i]=frames;}
                 if(elapsed.elapsed()-frameAt[i]>500){std::cerr<<"Renewal paused video over 500 ms\n";app.quit();return;}
             }
@@ -141,7 +149,7 @@ int main(int argc, char **argv) {
             share(host,0); ++stage;
         } else if(stage==3 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return !g->template findChild<QLabel *>("video")->pixmap().isNull(); })) {
             if(app.arguments().contains("--turn-renewal")){saved=WindowTestAccess::snapshots(host);
-                for(int i=0;i<count;++i){guestSaved.push_back(WindowTestAccess::snapshots(*guests[i]));initialDecoded[i]=decoded[i]=WindowTestAccess::decoded(*guests[i]);frameAt[i]=elapsed.elapsed();}
+                for(int i=0;i<count;++i){guestSaved.push_back(WindowTestAccess::snapshots(*guests[i]));frameCounters[i]=WindowTestAccess::watchFrames(*guests[i]);if(!frameCounters[i]){std::cerr<<"Missing receive frame probe\n";app.quit();return;}initialDecoded[i]=decoded[i]=frameCounters[i]->load();frameAt[i]=elapsed.elapsed();}
                 approvedAt=elapsed.elapsed();stage=15;}
             else if(app.arguments().contains("--quality-live")){share(host,1);stage=14;}
             else if(app.arguments().contains("--encoder-fallback")){saved=WindowTestAccess::snapshots(host);WindowTestAccess::fail(host,saved.front());stage=13;}
