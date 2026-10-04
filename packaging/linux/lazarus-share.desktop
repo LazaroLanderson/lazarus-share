@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Lazarus Share
-Exec=lazarus-share
+Exec=lazarus-share %u
 Icon=lazarus-share
 Categories=Network;AudioVideo;
 Terminal=false
+MimeType=x-scheme-handler/lazarus-share;

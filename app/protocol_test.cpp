@@ -8,6 +8,15 @@ int main(int argc, char **argv) {
     auto key = Protocol::randomBytes(16);
     check(Protocol::secret(Protocol::token(key)) == key);
     check(Protocol::token(key).size() == 26);
+    const auto link = Protocol::inviteLink(key);
+    check(Protocol::inviteSecret(link) == key);
+    check(Protocol::inviteSecret("lazarus-share://join#" + Protocol::token(key)) == key);
+    for (const auto &bad : {Protocol::token(key), QString("https://evil.example/join#") + Protocol::token(key),
+         QString("https://share.app.lazaruslabs.com.br/join?token=") + Protocol::token(key),
+         QString("https://share.app.lazaruslabs.com.br:443/join#") + Protocol::token(key),
+         QString("lazarus-share://join/path#") + Protocol::token(key),
+         QString("https://user@share.app.lazaruslabs.com.br/join#") + Protocol::token(key),
+         QString("https://share.app.lazaruslabs.com.br/join#INVALID")}) check(Protocol::inviteSecret(bad).isEmpty());
     check(Protocol::secret("INVALID").isEmpty());
     check(Protocol::room(key).size() == 64);
     Protocol::Channel host(key, "session", "peer", "hostnonce", "guestnonce", true);

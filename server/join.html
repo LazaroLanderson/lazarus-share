@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Entrar no Lazarus Share</title>
+<style>
+body{font:18px system-ui,sans-serif;background:#151a24;color:#eef2fa;margin:0;display:grid;min-height:100vh;place-items:center}main{max-width:480px;padding:32px}a,button{display:inline-block;background:#5279eb;color:white;border:0;border-radius:8px;padding:14px 20px;font:inherit;text-decoration:none;margin:8px 8px 8px 0}p{line-height:1.6}input{box-sizing:border-box;width:100%;padding:12px;border-radius:6px;border:1px solid #778;background:#252d3d;color:white}small{color:#bdc7de}
+</style>
+<main>
+<h1>Você recebeu um convite</h1>
+<p id="status">Abra o Lazarus Share e clique para entrar na sala.</p>
+<a id="open" hidden>Entrar no Lazarus Share</a>
+<button id="copy" hidden>Copiar link</button>
+<input id="invite" aria-label="Link do convite" readonly hidden>
+<p><small>Se o aplicativo não abrir, mantenha o Lazarus Share aberto, copie o link e use “Entrar com link”. O navegador pode pedir autorização para abrir o aplicativo.</small></p>
+<a href="https://github.com/LazaroLanderson/lazarus-share/releases" rel="noreferrer">Baixar Lazarus Share</a>
+</main>
+<script>
+const token=location.hash.slice(1);
+const valid=/^[A-Z2-7]{25}[AEIMQUY4]$/.test(token);
+const status=document.getElementById('status');
+if(valid){
+ const link='https://share.app.lazaruslabs.com.br/join#'+token;
+ const open=document.getElementById('open'),copy=document.getElementById('copy'),invite=document.getElementById('invite');
+ open.href='lazarus-share://join#'+token;open.hidden=false;copy.hidden=false;invite.value=link;
+ copy.onclick=async()=>{try{await navigator.clipboard.writeText(link);status.textContent='Link copiado. Cole no aplicativo para entrar.';}catch{invite.hidden=false;invite.select();status.textContent='Selecione e copie o link abaixo.';}};
+}else{status.textContent='Link de convite inválido. Peça um novo link ao anfitrião.';}
+</script>
+</html>

@@ -14,6 +14,7 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QLabel>
+#include <QCheckBox>
 #include <QElapsedTimer>
 #include <map>
 #include <memory>
@@ -22,6 +23,7 @@ class Window : public QMainWindow {
 public:
     explicit Window(bool onboarding = true);
     ~Window() override;
+    void openInvite(const QString &link);
 private:
 #ifdef LAZARUS_TESTING
     friend struct WindowTestAccess;
@@ -79,6 +81,8 @@ private:
     Quality quality() const;
     void notice(const QString &message);
     QLineEdit *token_;
+    QCheckBox *requireApproval_;
+    bool roomRequiresApproval_ = true;
     QString endpoint_, stun_, tlsPin_;
     QComboBox *monitor_, *preset_;
     QPushButton *identity_, *share_, *pause_, *change_;

@@ -2,7 +2,10 @@
 
 ## Convite e autenticação
 
-Convite = 16 bytes aleatórios codificados em Base32, sem padding (26 caracteres).
+Convite = 16 bytes aleatórios codificados em Base32, sem padding (26 caracteres),
+compartilhados como `https://share.app.lazaruslabs.com.br/join#TOKEN`. A página
+encaminha o fragmento para `lazarus-share://join#TOKEN`, sem enviá-lo ao servidor.
+O cliente aceita somente esses formatos, sem credenciais, query ou porta explícita.
 O servidor recebe somente SHA-256(`lazarus-share/room/v1:` + segredo), nunca o
 token ou seu segredo. A credencial de administração é independente, 32 bytes
 aleatórios; o servidor conserva seu hash para retomada do host.
@@ -10,6 +13,13 @@ aleatórios; o servidor conserva seu hash para retomada do host.
 O WebSocket aceita `create`, `resume`, `join`, `approve`, `remove`, `signal`,
 `relay` e `end`. O servidor devolve `created`, `joined`, `waiting`, `ready`,
 `signal`, `turn`, `left`, `host_offline`, `ended` ou `error`.
+
+`create` aceita `requireApproval` booleano: o app atual envia `false` por padrão;
+se omitido, o servidor usa `true` para compatibilidade. A política é imutável durante
+a sala e preservada em `resume`. `created` e `joined` incluem `requireApproval`.
+Salas abertas emitem `joined` e `ready` automaticamente, sem `waiting`; o quinto
+espectador recebe `error: room_full` sem ser inserido. Salas com aprovação mantêm
+a fila (até 16 candidatos) e o limite de quatro admissões por `approve`.
 
 Cada `ready` inclui peer, session e desafio do outro lado. Cada cliente cria um
 desafio próprio de 128 bits; a sinalização não pode substituir esse desafio

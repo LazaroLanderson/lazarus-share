@@ -16,7 +16,7 @@ int main(int argc,char **argv) {
     if(normalizedNickname("abcdefghijk").size() || normalizedNickname("x\ny").size() || normalizedNickname("   ").size())return 1;
     if(normalizedNickname(QString::fromUtf8("Jose\xcc\x81"))!=QString::fromUtf8("José"))return 2;
     Profile p{"José",9,true};p.save();auto copy=Profile::load();if(!copy.valid() || copy.nickname!=p.nickname || !copy.relay || copy.avatar!=9)return 3;
-    DiagnosticLog logs(temp.path()+"/logs");logs.append("test",{{"nickname","José"},{"token","SECRET"},{"sdp","SECRET"},{"ip","SECRET"},{"metrics",QJsonObject{{"kbps",0},{"password","SECRET"}}}});
+    DiagnosticLog logs(temp.path()+"/logs");logs.append("test",{{"nickname","José"},{"invite","https://share.app.lazaruslabs.com.br/join#SECRET"},{"link","lazarus-share://join#SECRET"},{"token","SECRET"},{"sdp","SECRET"},{"ip","SECRET"},{"metrics",QJsonObject{{"kbps",0},{"password","SECRET"}}}});
     auto text=QJsonDocument(logs.events()).toJson();if(text.contains("SECRET") || !text.contains("kbps"))return 4;
     logs.clear();if(!logs.events().isEmpty())return 5;
     QFile expired(temp.path()+"/logs/events-0.jsonl"); if(!expired.open(QIODevice::WriteOnly))return 6;

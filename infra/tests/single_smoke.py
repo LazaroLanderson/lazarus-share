@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix='lazarus-single-smoke-') as directory:
     root=Path(directory);infra=root/'infra';infra.mkdir();(root/'server').mkdir()
     for name in ('compose.single.yml','nginx.single.conf.template','Dockerfile'):
         shutil.copy2(SOURCE/'infra'/name,infra/name)
-    for name in ('service.py','requirements.txt'):shutil.copy2(SOURCE/'server'/name,root/'server'/name)
+    for name in ('service.py','requirements.txt','join.html'):shutil.copy2(SOURCE/'server'/name,root/'server'/name)
     for name in ('signal','public'):
         certs=infra/'certs'/name;certs.mkdir(parents=True)
         subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.2','-keyout',str(certs/'privkey.pem'),'-out',str(certs/'fullchain.pem')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -30,6 +30,10 @@ with tempfile.TemporaryDirectory(prefix='lazarus-single-smoke-') as directory:
             with context.wrap_socket(connection,server_hostname='localhost') as tls:
                 tls.sendall(b'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
                 if b'200 OK' not in tls.recv(4096):raise SystemExit('Domain proxy health failed')
+        with socket.create_connection(('127.0.0.2',443),timeout=5) as connection:
+            with context.wrap_socket(connection,server_hostname='localhost') as tls:
+                tls.sendall(b'GET /join HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
+                if b'200 OK' not in tls.recv(4096):raise SystemExit('Domain invitation page failed')
         for attempt in range(100):
             try:
                 with socket.create_connection(('127.0.0.2',5349),timeout=.2):pass

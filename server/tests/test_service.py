@@ -49,6 +49,75 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(h["session"], g["session"])
         return ws, joined["peer"]
 
+    async def test_auto_admission_limit_remove_and_resume(self):
+        host = await self.socket()
+        await host.send_json(dict(type="create", room=self.room, admin=self.admin, challenge="a" * 32, requireApproval=False))
+        self.assertFalse((await self.receive(host, "created"))["requireApproval"])
+        guests = []
+        for _ in range(4):
+            ws = await self.socket()
+            await ws.send_json(dict(type="join", room=self.room, challenge="b" * 32))
+            joined = await self.receive(ws, "joined")
+            self.assertFalse(joined["requireApproval"])
+            g = await self.receive(ws, "ready"); h = await self.receive(host, "ready")
+            self.assertEqual(g["session"], h["session"])
+            guests.append((ws, joined["peer"]))
+        fifth = await self.socket()
+        await fifth.send_json(dict(type="join", room=self.room, challenge="b" * 32))
+        self.assertEqual((await self.receive(fifth, "error"))["code"], "room_full")
+        self.assertEqual(len(self.service.rooms[self.room].guests), 4)
+        await host.send_json(dict(type="remove", peer=guests[0][1]))
+        await self.receive(guests[0][0], "ended"); await self.receive(host, "left")
+        await fifth.send_json(dict(type="join", room=self.room, challenge="b" * 32))
+        await self.receive(fifth, "joined"); await self.receive(fifth, "ready"); await self.receive(host, "ready")
+        remaining = [ws for ws, _ in guests[1:]] + [fifth]
+        await host.close()
+        for ws in remaining: await self.receive(ws, "host_offline")
+        resumed = await self.socket()
+        await resumed.send_json(dict(type="resume", room=self.room, admin=self.admin, challenge="c" * 32, requireApproval=True))
+        self.assertFalse((await self.receive(resumed, "created"))["requireApproval"])
+        for ws in remaining:
+            await self.receive(resumed, "ready"); await self.receive(ws, "ready")
+        await resumed.send_json(dict(type="end"))
+        for ws in remaining: await self.receive(ws, "ended")
+        await self.receive(resumed, "ended")
+
+    async def test_simultaneous_auto_admission_reserves_capacity(self):
+        host = await self.socket()
+        await host.send_json(dict(type="create", room=self.room, admin=self.admin, challenge="a" * 32, requireApproval=False))
+        await self.receive(host, "created")
+        guests = [await self.socket() for _ in range(8)]
+        # Force sends to yield so admission is tested while earlier joins are in flight.
+        original_send = self.service.send
+        async def yielding_send(ws, **message):
+            await asyncio.sleep(.005)
+            await original_send(ws, **message)
+        self.service.send = yielding_send
+        await asyncio.gather(*(ws.send_json(dict(type="join", room=self.room, challenge="b" * 32)) for ws in guests))
+        results = await asyncio.gather(*(asyncio.wait_for(ws.receive_json(), 2) for ws in guests))
+        self.assertEqual(sum(m["type"] == "joined" for m in results), 4)
+        self.assertEqual(sum(m.get("code") == "room_full" for m in results), 4)
+        self.assertEqual(sum(g.approved for g in self.service.rooms[self.room].guests.values()), 4)
+
+    async def test_explicit_approval_and_invalid_policy(self):
+        host = await self.socket()
+        for value in ("false", 0, None):
+            await host.send_json(dict(type="create", room=self.room, admin=self.admin, challenge="a" * 32, requireApproval=value))
+            self.assertEqual((await self.receive(host, "error"))["code"], "invalid_message")
+            self.assertNotIn(self.room, self.service.rooms)
+        await host.send_json(dict(type="create", room=self.room, admin=self.admin, challenge="a" * 32, requireApproval=True))
+        self.assertTrue((await self.receive(host, "created"))["requireApproval"])
+        await self.guest(host)
+
+    async def test_invitation_page(self):
+        response = await self.client.get("/join")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
+        text = await response.text()
+        self.assertIn("location.hash", text)
+        self.assertIn("lazarus-share://join#", text)
+        self.assertIn("navigator.clipboard", text)
+
     async def test_approval_and_four_viewer_limit(self):
         host = await self.host()
         for _ in range(4):

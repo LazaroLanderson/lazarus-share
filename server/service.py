@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import os
+from pathlib import Path
 import re
 import secrets
 import time
@@ -33,6 +34,7 @@ class Guest:
 
 @dataclass
 class Room:
+    require_approval: bool
     host: web.WebSocketResponse | None
     admin_hash: bytes
     challenge: str
@@ -139,9 +141,11 @@ class Service:
                             if not isinstance(admin, str) or not HEX.fullmatch(admin) or candidate in self.rooms or len(self.rooms) >= 1000:
                                 await self.send(ws, type="error", code="create_failed")
                                 continue
+                            require_approval = m.get("requireApproval", True)
+                            if not isinstance(require_approval, bool): raise ValueError()
                             key, role = candidate, "host"
-                            self.rooms[key] = Room(ws, hashlib.sha256(admin.encode()).digest(), challenge, profile=profile, capabilities=caps)
-                            await self.send(ws, type="created")
+                            self.rooms[key] = Room(require_approval, ws, hashlib.sha256(admin.encode()).digest(), challenge, profile=profile, capabilities=caps)
+                            await self.send(ws, type="created", requireApproval=self.rooms[key].require_approval)
                         elif kind == "resume":
                             room = self.rooms.get(candidate)
                             admin = m.get("admin", "")
@@ -153,10 +157,11 @@ class Service:
                             room.profile, room.capabilities = profile, caps
                             # Rotate host challenge and sessions, so stale traffic cannot be replayed.
                             room.challenge = challenge
-                            await self.send(ws, type="created")
+                            await self.send(ws, type="created", requireApproval=self.rooms[key].require_approval)
                             for pid, guest in room.guests.items():
                                 guest.consent = guest.host_consent = guest.turn_issued = False
-                                await self.send(ws, type="waiting", peer=pid)
+                                if room.require_approval:
+                                    await self.send(ws, type="waiting", peer=pid, profile=guest.profile, capabilities=guest.capabilities)
                                 if guest.approved:
                                     await self.ready(room, pid)
                         elif kind == "join":
@@ -164,10 +169,16 @@ class Service:
                             if not room or room.host is None or len(room.guests) >= 16:
                                 await self.send(ws, type="error", code="room_unavailable")
                                 continue
+                            if not room.require_approval and sum(g.approved for g in room.guests.values()) >= 4:
+                                await self.send(ws, type="error", code="room_full")
+                                continue
                             key, role, peer_id = candidate, "guest", secrets.token_hex(8)
-                            room.guests[peer_id] = Guest(ws, challenge, profile=profile, capabilities=caps)
-                            await self.send(ws, type="joined", peer=peer_id)
-                            await self.send(room.host, type="waiting", peer=peer_id, profile=profile, capabilities=caps)
+                            room.guests[peer_id] = Guest(ws, challenge, approved=not room.require_approval, profile=profile, capabilities=caps)
+                            await self.send(ws, type="joined", peer=peer_id, requireApproval=room.require_approval)
+                            if room.require_approval:
+                                await self.send(room.host, type="waiting", peer=peer_id, profile=profile, capabilities=caps)
+                            else:
+                                await self.ready(room, peer_id)
                         else:
                             raise ValueError()
                         continue
@@ -264,6 +275,11 @@ def application(service=None):
     async def health(_):
         return web.json_response({"ok": True})
     app.router.add_get("/health", health)
+    async def invitation(_):
+        return web.Response(text=Path(__file__).with_name("join.html").read_text(), content_type="text/html",
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+                                     "X-Content-Type-Options": "nosniff"})
+    app.router.add_get("/join", invitation)
 
     async def sweep(_):
         async def loop():

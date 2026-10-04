@@ -25,6 +25,9 @@ static DWORD run(std::wstring command, const std::wstring &directory, bool hidde
     CloseHandle(process.hThread); CloseHandle(process.hProcess); return code;
 }
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
+    wchar_t launcher[32768];
+    if (!GetModuleFileNameW(nullptr, launcher, 32768)) return 1;
+    SetEnvironmentVariableW(L"LAZARUS_LAUNCHER_PATH", launcher);
     wchar_t tmp[32768]; if (!GetTempPathW(32768, tmp)) return 1;
     unsigned char random[16];
     if (BCryptGenRandom(nullptr, random, sizeof(random), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return 1;

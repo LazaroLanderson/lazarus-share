@@ -324,3 +324,13 @@ Esse teste oferece salas/P2P; o relay continua desabilitado. Quando o domínio
 estiver pronto, prepare o certificado público e mude `SIGNAL_HOST` para o domínio
 real e `SIGNAL_TLS_MODE=system`. Retire o pin temporário dos clientes e use a nova
 URL de salas. Substituir certificados deve ser uma operação explícita.
+
+## Convites por link
+
+Publique primeiro o serviço e o proxy com `/join` e `requireApproval`, valide
+`https://share.app.lazaruslabs.com.br/join` e os testes de entrada automática e
+manual; só depois distribua os pacotes atualizados. O Docker inclui `join.html`.
+Clientes antigos continuam exigindo aprovação quando omitem a nova opção.
+O registro do protocolo é feito por usuário ao abrir o app; aponta para o EXE
+portátil original ou para `APPIMAGE`, sem depender dos arquivos extraídos. Se
+mover o pacote, abra-o no novo local para atualizar a associação.

@@ -7,6 +7,8 @@ namespace Protocol {
 QByteArray randomBytes(int count);
 QString token(const QByteArray &secret);
 QByteArray secret(const QString &token);
+QString inviteLink(const QByteArray &secret);
+QByteArray inviteSecret(const QString &link);
 QString room(const QByteArray &secret);
 QString randomHex(int count);
 bool equal(const QByteArray &a, const QByteArray &b);

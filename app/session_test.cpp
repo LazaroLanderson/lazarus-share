@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QTemporaryDir>
 #include <QSettings>
+#include <QMessageBox>
 #include <iostream>
 #include <algorithm>
 #include <memory>
@@ -22,6 +23,7 @@ struct PeerTestAccess {
     static void failEncoder(Peer &peer){auto *failure=g_error_new_literal(GST_STREAM_ERROR,GST_STREAM_ERROR_ENCODE,"Controlled encoder failure");auto *bus=gst_element_get_bus(peer.pipeline_);gst_bus_post(bus,gst_message_new_error(GST_OBJECT(peer.encoder_),failure,nullptr));g_error_free(failure);gst_object_unref(bus);}
 };
 struct WindowTestAccess {
+    static bool inRoom(Window &w, const QString &link) { return w.active_ && w.secret_ == Protocol::inviteSecret(link); }
     struct Snapshot {QString id;int generation,transport;Peer *media;QString encoder;};
     static std::vector<Snapshot> snapshots(Window &w){std::vector<Snapshot> result;for(auto &[id,c]:w.peers_)result.push_back({id,c->generation,c->transport,c->media.get(),c->media?c->media->encoderName():QString{}});return result;}
     static void fail(Window &w,const Snapshot &s){auto &c=*w.peers_.at(s.id);c.software=false;PeerTestAccess::failEncoder(*c.media);}
@@ -111,15 +113,41 @@ int main(int argc, char **argv) {
     bool automatic=app.arguments().contains("--relay-auto"), denial=app.arguments().contains("--deny-relay"); int transport=0;
     for(auto argument:app.arguments())if(argument.startsWith("--relay-transport="))transport=argument.section('=',1).toInt();
     Profile{"José",3,true}.save(); Window host; host.show();
+    if (app.arguments().contains("--invite-controls")) {
+        auto fail = [] { std::cerr << "Invitation UI check failed\n"; return 1; };
+        auto *policy = host.findChild<QCheckBox *>("requireApproval");
+        if (policy->isChecked()) return fail();
+        button(host,"Criar sala")->click();
+        const auto original = host.findChild<QLineEdit *>("invite")->text();
+        if (policy->isEnabled() || !button(host,"Aprovar")->isHidden()) return fail();
+        host.openInvite(original); host.openInvite("https://invalid.example/join#INVALID");
+        if (!WindowTestAccess::inRoom(host, original)) return fail();
+        const auto next = Protocol::inviteLink(Protocol::randomBytes(16));
+        QTimer::singleShot(0, &host, [] { if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) box->button(QMessageBox::No)->click(); });
+        host.openInvite(next); if (!WindowTestAccess::inRoom(host, original)) return fail();
+        QTimer::singleShot(0, &host, [] { if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) box->button(QMessageBox::Yes)->click(); });
+        host.openInvite(next); if (!WindowTestAccess::inRoom(host, next)) return fail();
+        button(host,"Encerrar / sair")->click();
+        if (!policy->isEnabled()) return fail();
+        Profile{}.save(); Window newcomer(false);
+        QTimer::singleShot(0, &newcomer, [] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) {
+                dialog->findChild<QLineEdit *>("nickname")->setText("Novo"); dialog->accept();
+            }
+        });
+        newcomer.openInvite(next); if (!WindowTestAccess::inRoom(newcomer, next)) return fail();
+        std::cout << "Repeated and invalid links, cancel/confirm room switch and initial profile passed\n"; return 0;
+    }
     if (app.arguments().contains("--probe-tls-refusal")) {
-        button(host,"Criar sala")->click(); int result=1;
+        host.findChild<QCheckBox *>("requireApproval")->setChecked(true); button(host,"Criar sala")->click(); int result=1;
         QTimer::singleShot(3000,&app,[&] { result=host.findChild<QLabel *>("status")->text().startsWith("Sala criada")?1:0; app.quit(); }); app.exec(); return result;
     }
+    const bool autoAdmission=app.arguments().contains("--auto-admission");
     const int count=app.arguments().contains("--four-viewers")?4:1;
     std::vector<std::unique_ptr<Window>> guests;
     for(int i=0;i<count;++i) { Profile{QString("Viewer%1").arg(i),i,automatic}.save(); guests.push_back(std::make_unique<Window>()); guests.back()->show(); }
     if(automatic || denial) { WindowTestAccess::block(host,transport-1); for(auto &g:guests)WindowTestAccess::block(*g,transport-1); }
-    host.findChild<QCheckBox *>()->setChecked(true); button(host,"Criar sala")->click();
+    host.findChild<QCheckBox *>("testPattern")->setChecked(true); host.findChild<QCheckBox *>("requireApproval")->setChecked(!autoAdmission); button(host,"Criar sala")->click();
     QTimer timer; QElapsedTimer elapsed; elapsed.start(); timer.setInterval(20); int stage=0; qint64 approvedAt=0,renewalAt=0; bool passed=false;std::vector<WindowTestAccess::Snapshot> saved;
     std::vector<std::vector<WindowTestAccess::Snapshot>> guestSaved;
     std::vector<std::shared_ptr<std::atomic<unsigned>>> frameCounters(count);
@@ -140,9 +168,9 @@ int main(int argc, char **argv) {
         if(stage==0 && host.findChild<QLabel *>("status")->text().startsWith("Sala criada")) {
             if(button(host,"Parar compartilhamento")->isEnabled()) { app.quit(); return; }
             auto token=host.findChild<QLineEdit *>("invite")->text();
-            for(auto &g:guests) { g->findChild<QLineEdit *>("invite")->setText(token); button(*g,"Entrar com token")->click(); } ++stage;
+            for(auto &g:guests) { g->openInvite(token); } ++stage;
         } else if(stage==1 && host.findChild<QListWidget *>("viewers")->count()==count) {
-            for(int i=0;i<count;++i) { host.findChild<QListWidget *>("viewers")->setCurrentRow(i); button(host,"Aprovar")->click(); }
+            if (!autoAdmission) for(int i=0;i<count;++i) { host.findChild<QListWidget *>("viewers")->setCurrentRow(i); button(host,"Aprovar")->click(); }
             approvedAt=elapsed.elapsed(); ++stage;
         } else if(stage==2 && elapsed.elapsed()-approvedAt>500) {
             if(std::any_of(guests.begin(),guests.end(),[](auto &g) { return !g->template findChild<QLabel *>("video")->pixmap().isNull(); })) { std::cerr<<"Room captured without consent\n"; app.quit(); return; }
@@ -177,11 +205,11 @@ int main(int argc, char **argv) {
             button(host,"Parar compartilhamento")->click();stage=4;
         } else if(stage==4 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return g->template findChild<QLabel *>("video")->pixmap().isNull(); })) {
             if(app.arguments().contains("--turn-renewal") && !WindowTestAccess::pausedReply(host)){std::cerr<<"Late reply restarted paused media\n";app.quit();return;}
-            if(host.findChild<QLineEdit *>("invite")->text().size()!=26 || button(host,"Criar sala")->isEnabled()) { app.quit(); return; }
+            if(Protocol::inviteSecret(host.findChild<QLineEdit *>("invite")->text()).isEmpty() || button(host,"Criar sala")->isEnabled()) { app.quit(); return; }
             share(host,1); ++stage;
         } else if(stage==5 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return g->template findChild<QLabel *>("metrics")->text().contains("1920×1080"); })) {
             button(host,"Encerrar / sair")->click(); ++stage;
-        } else if(stage==6 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return button(*g,"Entrar com token")->isEnabled(); })) { passed=true; app.quit(); }
+        } else if(stage==6 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return button(*g,"Entrar com link")->isEnabled(); })) { passed=true; app.quit(); }
     }); timer.start(); app.exec();
     if(passed) std::cout<<count<<" viewer(s): approved idle room, explicit share, pause, resume and teardown passed\n";
     return passed?0:1;

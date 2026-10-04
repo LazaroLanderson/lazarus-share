@@ -1,7 +1,9 @@
 #include "window.h"
+#include "activation.h"
 #include "encoder.h"
 #include <QApplication>
 #include <QTimer>
+#include <QMessageBox>
 #include <atomic>
 #include <iostream>
 #ifdef Q_OS_WIN
@@ -50,9 +52,29 @@ int main(int argc, char **argv) {
     if (app.arguments().contains("--smoke-test")) QTimer::singleShot(500, &app, &QCoreApplication::quit);
     QCoreApplication::setOrganizationName("LazarusLabs");
     QCoreApplication::setApplicationName("LazarusShare");
-    QCoreApplication::setApplicationVersion("0.2.2");
+    QCoreApplication::setApplicationVersion("0.2.3");
+    const bool smoke = app.arguments().contains("--smoke-test");
+    QString invite;
+    for (const auto &arg : app.arguments().mid(1)) if (!arg.startsWith("--")) { invite = arg; break; }
+    // Invalid external input is never forwarded to or allowed to disturb a session.
+    if (!invite.isEmpty() && Protocol::inviteSecret(invite).isEmpty()) return 1;
+    Activation activation;
+    if (!smoke) {
+        const auto result = activation.start(invite);
+        if (result == Activation::Result::Forwarded) return 0;
+        if (result == Activation::Result::Failed) {
+            QMessageBox::warning(nullptr, "Lazarus Share", "Não foi possível enviar o convite ao aplicativo. Feche e abra o Lazarus Share novamente."); return 1;
+        }
+    }
+    if (!smoke) activation.registerProtocol();
     int result;
-    { Window window(!app.arguments().contains("--smoke-test")); window.show(); result = app.exec(); }
+    { Window window(!smoke && invite.isEmpty()); window.show();
+      QObject::connect(&activation, &Activation::invitation, &window, [&window](const QString &link) {
+          if (link.isEmpty()) { window.showNormal(); window.raise(); window.activateWindow(); }
+          else window.openInvite(link);
+      });
+      if (!invite.isEmpty()) QTimer::singleShot(0, &window, [&window, invite] { window.openInvite(invite); });
+      result = app.exec(); }
 #ifdef Q_OS_WIN
     CoUninitialize();
 #endif

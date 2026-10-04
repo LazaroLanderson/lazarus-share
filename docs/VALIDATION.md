@@ -3,7 +3,8 @@
 | Cenário | Critério |
 |---|---|
 | Autenticação | Alteração de payload, chave errada e replay são rejeitados |
-| Salas | Aprovação obrigatória; quinto viewer não é aprovado |
+| Salas | Entrada automática por padrão; aprovação opcional; quinto espectador recusado |
+| Convites | Link HTTPS abre o app existente; troca de sala exige confirmação |
 | Privacidade | Sem TURN antes das duas autorizações; diagnóstico sem segredos |
 | WebRTC local | Vídeo VP8 sintético é decodificado por outro peer |
 | Pop!_OS COSMIC | Portal seleciona o monitor correto; cancelar/encerrar para captura |

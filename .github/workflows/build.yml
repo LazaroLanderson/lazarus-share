@@ -36,6 +36,8 @@ jobs:
       - run: .venv/bin/python scripts/test-turn-renewal-session.py
       - run: |
           .venv/bin/python server/tests/session_local.py --four-viewers
+          .venv/bin/python server/tests/session_local.py --four-viewers --auto-admission
+          .venv/bin/python server/tests/session_local.py --invite-controls
           .venv/bin/python server/tests/session_local.py --four-viewers --encoder-fallback
           LAZARUS_VIDEO_ENCODER=vp8 .venv/bin/python server/tests/session_local.py --quality-live
       - run: .venv/bin/python server/tests/local_tls.py
@@ -72,7 +74,7 @@ jobs:
             mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad
             mingw-w64-x86_64-libnice mingw-w64-x86_64-python mingw-w64-x86_64-openssl
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
-      - run: ctest --test-dir build -R "protocol|profile|media-modules|media-encoder-creation" --output-on-failure
+      - run: ctest --test-dir build -R "activation|protocol|profile|media-modules|media-encoder-creation" --output-on-failure
         env:
           QT_QPA_PLATFORM: offscreen
       - run: python packaging/windows/test_tls.py

@@ -2,7 +2,7 @@
 
 **Compartilhamento de tela portátil, sem login, com conexão P2P e código aberto.**
 
-O host captura um monitor, aprova quem entra e transmite para até quatro viewers.
+O host captura um monitor e transmite para até quatro espectadores, com entrada por link e aprovação opcional.
 O vídeo e o áudio seguem diretamente entre os computadores quando a rede permite.
 Na versão 0.2.0, o relay criptografado entra automaticamente após falha direta,
 quando host e viewer autorizaram essa possibilidade no perfil local.
@@ -53,9 +53,9 @@ de testes em equipamentos reais.
 | Recurso | Comportamento |
 | --- | --- |
 | Captura | Um monitor por host, com cursor incluído |
-| Salas | Convite aleatório de 128 bits, apresentado como token de 26 caracteres |
-| Aprovação | O host aprova cada viewer, pode removê-lo e encerra a sala |
-| Viewers | Até quatro conexões aprovadas simultâneas |
+| Salas | Convite aleatório de 128 bits, compartilhado por link HTTPS |
+| Aprovação | Opcional ao criar a sala; o host pode remover espectadores e encerrar a sala |
+| Viewers | Até quatro espectadores admitidos simultaneamente |
 | Qualidade | Presets Baixa (720p/30), Alta (1080p/60) e Nativo |
 | Vídeo | H.264 por hardware quando o teste do encoder passa; VP8 por CPU como alternativa |
 | Áudio | Desligado inicialmente; somente aplicativos selecionados pelo host |
@@ -207,7 +207,7 @@ Use **Vídeo de teste** na primeira sala para testar mídia sem expor sua tela.
 Siga os passos de criação e aprovação da próxima seção. Depois, encerre a sala
 e repita com a captura real.
 
-Dois clientes no mesmo PC permitem testar negociação, aprovação e mídia. Esse
+Para testar vários participantes no mesmo PC, use `server/tests/session_local.py`; a execução normal encaminha convites para a janela já aberta. Esse
 teste não valida a conexão entre máquinas nem os bloqueios de uma operadora.
 
 Os PCs precisam conseguir se alcançar na rede. Se necessário, permita TCP/8443
@@ -220,10 +220,13 @@ para transformar o servidor de teste em serviço público.
 1. No primeiro uso, escolha nickname (até 10 caracteres), uma das 10 cores de avatar
    e se permite relay automático. O perfil fica salvo somente no PC; clique no nome
    no canto superior direito para editar.
-2. Clique **Criar sala**: nenhuma tela ou áudio é capturado nesse momento.
-3. Copie o token e envie ao contato. Ele cola o convite e clica **Entrar com token**.
-4. Aprove cada solicitação pelo nickname. Nomes não são verificados e podem repetir;
-   confirme a identidade com seu contato antes de aprovar.
+2. Opcionalmente marque **Novos espectadores precisam de aprovação** e clique
+   **Criar sala**: nenhuma tela ou áudio é capturado nesse momento.
+3. Use **Copiar link** e envie ao contato. Com o app aberto, ele abre o convite e
+   clica **Entrar no Lazarus Share** na página. Também pode colar em **Entrar com link**.
+4. A entrada é automática por padrão. Se ativou a checkbox, aprove cada solicitação
+   pelo nickname. Nomes não são verificados e podem repetir.
+   Abrir um convite de outra sala pede confirmação antes de sair da sessão atual.
 5. Clique **Compartilhar tela**, escolha qualidade e monitor. No Wayland, o sistema
    abre o seletor de captura. Cancelar não inicia transmissão.
 6. Marque apenas os aplicativos cujo áudio deseja transmitir. Novos processos precisam
@@ -532,3 +535,10 @@ encoder a cada renovação. Falhas na emissão são repetidas sem derrubar a mí
 Atualize os dois PCs para corrigir ambos os sentidos de compartilhamento.
 Consulte [notas 0.2.2](docs/releases/0.2.2.md). Entrega em rascunho, sem mudanças
 na VPS; testes locais não substituem uma sessão longa entre PCs reais.
+
+### Convites 0.2.3
+
+Entrada por link HTTPS, aprovação opcional ao criar a sala e confirmação antes
+de trocar de sessão. Consulte [notas 0.2.3](docs/releases/0.2.3.md). A página
+`/join` e o servidor compatível devem estar disponíveis antes da distribuição
+dos executáveis atualizados.

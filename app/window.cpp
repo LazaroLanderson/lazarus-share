@@ -36,14 +36,16 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     const bool hosted = endpoint_ == hostedEndpoint;
     stun_ = qEnvironmentVariable("LAZARUS_STUN_URL", hosted ? "stun://share.app.lazaruslabs.com.br:3478" : "");
     tlsPin_ = qEnvironmentVariable("LAZARUS_TLS_PIN", "");
-    token_ = new QLineEdit; token_->setPlaceholderText("Token do convite (26 caracteres)");
+    token_ = new QLineEdit; token_->setPlaceholderText("Cole o link do convite");
     token_->setObjectName("invite");
-    form->addRow("Convite", token_); layout->addLayout(form);
+    form->addRow("Link do convite", token_); layout->addLayout(form);
     auto *buttons = new QHBoxLayout;
-    create_ = new QPushButton("Criar sala"); join_ = new QPushButton("Entrar com token"); stop_ = new QPushButton("Encerrar / sair");
-    auto *copy = new QPushButton("Copiar token"); auto *exportButton = new QPushButton("Exportar diagnóstico");
+    create_ = new QPushButton("Criar sala"); join_ = new QPushButton("Entrar com link"); stop_ = new QPushButton("Encerrar / sair");
+    auto *copy = new QPushButton("Copiar link"); auto *exportButton = new QPushButton("Exportar diagnóstico");
     for (auto *b : {create_, join_, copy, stop_, exportButton}) buttons->addWidget(b);
     layout->addLayout(buttons);
+    requireApproval_ = new QCheckBox("Novos espectadores precisam de aprovação");
+    requireApproval_->setObjectName("requireApproval"); layout->addWidget(requireApproval_);
     monitor_ = new QComboBox(root); monitor_->hide();
     for (auto *screen : QGuiApplication::screens()) monitor_->addItem(screen->name());
     preset_ = new QComboBox(root); preset_->setObjectName("preset"); preset_->addItems({"Baixa — 720p / 30 FPS", "Alta — 1080p / 60 FPS", "Nativo — resolução do monitor / 60 FPS"}); preset_->setCurrentIndex(1); preset_->hide();
@@ -57,16 +59,16 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     connect(share_, &QPushButton::clicked, this, &Window::share);
     connect(pause_, &QPushButton::clicked, this, &Window::stopSharing);
     connect(change_, &QPushButton::clicked, this, &Window::share);
-    auto *test = new QCheckBox("Vídeo de teste (diagnóstico de conexão)"); layout->addWidget(test);
+    auto *test = new QCheckBox("Vídeo de teste (diagnóstico de conexão)"); test->setObjectName("testPattern"); layout->addWidget(test);
     status_ = new QLabel("Pronto. Vídeo/áudio não são gravados. Servidores processam metadados de conexão.");
     status_->setWordWrap(true); layout->addWidget(status_);
     status_->setObjectName("status");
     auto *middle = new QHBoxLayout;
-    auto *left = new QVBoxLayout; left->addWidget(new QLabel("Viewers — selecione para aprovar, remover ou autorizar relay"));
+    auto *left = new QVBoxLayout; left->addWidget(new QLabel("Espectadores — selecione para gerenciar"));
     viewers_ = new QListWidget; left->addWidget(viewers_);
     viewers_->setObjectName("viewers");
     auto *actions = new QHBoxLayout; approve_ = new QPushButton("Aprovar"); remove_ = new QPushButton("Remover"); relay_ = new QPushButton("Tentar novamente");
-    actions->addWidget(approve_); actions->addWidget(remove_); actions->addWidget(relay_); left->addLayout(actions);
+    approve_->hide(); actions->addWidget(approve_); actions->addWidget(remove_); actions->addWidget(relay_); left->addLayout(actions);
     audioStatus_ = new QLabel(audio_.supported() ? "Áudio desligado. Marque somente aplicativos autorizados." : audio_.limitation()); audioStatus_->setWordWrap(true);
     left->addWidget(audioStatus_); apps_ = new QListWidget; left->addWidget(apps_); middle->addLayout(left, 1);
     video_ = new VideoView;video_->setText("O viewer verá a tela aqui."); video_->setAlignment(Qt::AlignCenter); video_->setMinimumSize(400, 260);video_->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
@@ -112,7 +114,7 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
         if (!active_) { socket_.close(); return; }
         QJsonObject m{{"type", host_ ? (created_ ? "resume" : "create") : "join"}, {"room", room_}, {"challenge", challenge_}};
         m["profile"] = profile_.json(); m["capabilities"] = QJsonArray{"profile", "sharing", "turn-endpoints"};
-        if (host_) m["admin"] = admin_; send(m);
+        if (host_) { m["admin"] = admin_; if (!created_) m["requireApproval"] = roomRequiresApproval_; } send(m);
     });
     connect(&socket_, &QWebSocket::sslErrors, this, [this](const QList<QSslError> &errors) {
         auto pin = tlsPin_.trimmed().remove(':').remove(' ').toLower();
@@ -177,22 +179,40 @@ void Window::create() {
     if (active_ || !profile_.valid()) return;
     host_ = active_ = true; created_ = false;
     secret_ = Protocol::randomBytes(16); room_ = Protocol::room(secret_); admin_ = Protocol::randomHex(32); challenge_ = Protocol::randomHex(16);
-    token_->setText(Protocol::token(secret_)); token_->setReadOnly(true); create_->setEnabled(false); join_->setEnabled(false); stop_->setEnabled(true);
+    roomRequiresApproval_ = requireApproval_->isChecked(); requireApproval_->setEnabled(false); approve_->setVisible(roomRequiresApproval_);
+    token_->setText(Protocol::inviteLink(secret_)); token_->setReadOnly(true); create_->setEnabled(false); join_->setEnabled(false); stop_->setEnabled(true);
     notice("Criando sala, sem compartilhar tela.");
     refreshAudio(); log("room_create"); openSocket();
 }
 void Window::join() {
     if (active_ || !profile_.valid()) return;
-    secret_ = Protocol::secret(token_->text()); if (secret_.isEmpty()) { notice("Token inválido: use os 26 caracteres do convite."); return; }
+    secret_ = Protocol::inviteSecret(token_->text()); if (secret_.isEmpty()) { notice("Link de convite inválido."); return; }
+    requireApproval_->setEnabled(false); approve_->hide();
     host_ = false; active_ = true; room_ = Protocol::room(secret_); challenge_ = Protocol::randomHex(16);
     create_->setEnabled(false); join_->setEnabled(false); token_->setReadOnly(true); stop_->setEnabled(true);
-    audio_.stop(); refreshAudio(); openSocket();
+    audio_.stop(); refreshAudio(); notice("Conectando à sala…"); openSocket();
+}
+void Window::openInvite(const QString &link) {
+    auto invitedSecret = Protocol::inviteSecret(link);
+    if (invitedSecret.isEmpty()) { notice("Link de convite inválido."); return; }
+    showNormal(); raise(); activateWindow();
+    if (active_ && invitedSecret == secret_) return;
+    if (active_) {
+        if (QMessageBox::question(this, "Trocar de sala", "Sair da sala atual e entrar na sala do convite?",
+                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;
+        stop();
+    }
+    token_->setText(Protocol::inviteLink(invitedSecret));
+    if (!profile_.valid()) editIdentity();
+    if (!profile_.valid()) { notice("Escolha um nickname para entrar na sala."); return; }
+    join();
 }
 void Window::stop() {
     if (active_ && host_ && socket_.state() == QAbstractSocket::ConnectedState) send({{"type", "end"}});
     stopSharing(); log("room_closed");
     active_ = false; created_ = false; socketLost_ = -1; socket_.close(); peers_.clear(); approved_.clear(); seenSessions_.clear(); viewers_->clear();
     capture_.stop(); audio_.stop(); refreshAudio();
+    requireApproval_->setEnabled(true); requireApproval_->setChecked(false); approve_->hide();
     secret_.fill(0); secret_.clear(); room_.clear(); admin_.clear(); viewerId_.clear(); token_->clear(); token_->setReadOnly(false);
     create_->setEnabled(profile_.valid()); join_->setEnabled(profile_.valid()); stop_->setEnabled(false); share_->setEnabled(false);
     video_->clearFrame("Sessão encerrada."); metrics_->setText("Upload: 0 kbps"); notice("Sessão encerrada.");
@@ -231,20 +251,21 @@ void Window::signal(const QString &id, QJsonObject body) {
 void Window::message(const QJsonObject &m) {
     if (!active_) return;
     auto type = m["type"].toString(); auto id = m["peer"].toString();
-    if (type == "created") { created_ = true; share_->setEnabled(!sharing_ && !capturePending_); notice("Sala criada. Envie o token; aprove cada viewer antes de transmitir."); }
-    else if (type == "joined") { viewerId_ = id; row(id, "Aguardando aprovação do host"); notice("Aguardando aprovação."); }
+    if (type == "created") { roomRequiresApproval_ = m["requireApproval"].toBool(true); requireApproval_->setChecked(roomRequiresApproval_); approve_->setVisible(roomRequiresApproval_); created_ = true; share_->setEnabled(!sharing_ && !capturePending_); notice(roomRequiresApproval_ ? "Sala criada. Envie o link; novos espectadores precisam de aprovação." : "Sala criada. Envie o link para os espectadores entrarem."); }
+    else if (type == "joined") { viewerId_ = id; roomRequiresApproval_ = m["requireApproval"].toBool(true); row(id, roomRequiresApproval_ ? "Aguardando aprovação" : "Conectando"); notice(roomRequiresApproval_ ? "Aguardando aprovação." : "Conectando à sala…"); }
     else if (type == "waiting") { auto c = std::make_unique<Connection>(); auto p = m["profile"].toObject(); c->nickname = normalizedNickname(p["nickname"].toString()); c->avatar = qBound(0, p["avatar"].toInt(), 9); peers_[id] = std::move(c); row(id, "Aguardando aprovação"); log("viewer_waiting", id); }
     else if (type == "ready") {
         if (!host_ && id != viewerId_) return;
-        if (host_ && !approved_.contains(id)) { notice("Viewer sem aprovação local; negociação recusada."); return; }
+        if (host_ && roomRequiresApproval_ && !approved_.contains(id)) { notice("Viewer sem aprovação local; negociação recusada."); return; }
         auto session = m["session"].toString();
         if (session.size() != 32 || seenSessions_.contains(session) || seenSessions_.size() >= 256) return;
         seenSessions_.insert(session);
+        if (host_) approved_.insert(id);
         auto c = std::make_unique<Connection>();
         c->channel = Protocol::Channel(secret_, m["session"].toString(), id, challenge_, m["challenge"].toString(), host_);
         auto p = m["profile"].toObject(); c->nickname = normalizedNickname(p["nickname"].toString()); c->avatar = qBound(0,p["avatar"].toInt(),9);
         c->session = session; c->modern = m["capabilities"].toArray().contains("sharing"); c->localConsent = profile_.relay;
-        peers_[id] = std::move(c); row(id, "Aprovado — aguardando compartilhamento"); log("viewer_approved", id);
+        peers_[id] = std::move(c); row(id, "Na sala — aguardando compartilhamento"); notice("Na sala."); log("viewer_approved", id);
         signal(id, {{"kind", "profile"}, {"profile", profile_.json()}});
         signal(id, {{"kind", "relay-consent"}, {"enabled", profile_.relay}});
         if (host_) { signal(id, {{"kind", "sharing"}, {"enabled", sharing_}}); if (sharing_) restart(id, -1); }
@@ -327,6 +348,7 @@ void Window::message(const QJsonObject &m) {
             if(c.renewal.pending){c.renewal.failed(time_.elapsed());log("turn_renewal_failed",id,{{"error_code","turn_unavailable"}});}
             else if(c.relayRequested){c.exhausted=true;c.relayRequested=false;row(id,"Relay indisponível no servidor");}
         }
+        if (code == "room_full" && !host_) { stop(); notice("Sala cheia: limite de quatro espectadores."); }
         if (code == "resume_failed" || code == "room_unavailable" || code == "create_failed") { stop(); notice("Sala indisponível: " + code); }
     }
 }
@@ -461,7 +483,7 @@ void Window::selectAudio() {
     audio_.select(selected); refreshAudio(); audioStatus_->setText(audio_.selected().isEmpty() ? "Áudio desligado." : "Transmitindo somente os aplicativos marcados.");
 }
 void Window::diagnostics() {
-    QJsonObject report{{"version", "0.2.2"}, {"events", log_.events()}, {"profile", profile_.json()}};
+    QJsonObject report{{"version", "0.2.3"}, {"events", log_.events()}, {"profile", profile_.json()}};
     auto path = QFileDialog::getSaveFileName(this, "Exportar diagnóstico sem segredos", "diagnostico.json", "JSON (*.json)");
     if (path.isEmpty()) return; QFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(report).toJson()) < 0) notice("Não foi possível exportar o diagnóstico.");

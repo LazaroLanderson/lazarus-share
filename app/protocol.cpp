@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QRandomGenerator>
 #include <utility>
+#include <QUrl>
 
 namespace Protocol {
 QByteArray randomBytes(int count) {
@@ -34,6 +35,17 @@ QByteArray secret(const QString &input) {
         if (available >= 8) { available -= 8; out += char((bits >> available) & 255); }
     }
     return out.size() == 16 && token(out) == normalized ? out : QByteArray();
+}
+QString inviteLink(const QByteArray &secret) {
+    return "https://share.app.lazaruslabs.com.br/join#" + token(secret);
+}
+QByteArray inviteSecret(const QString &input) {
+    const QUrl url(input.trimmed(), QUrl::StrictMode);
+    if (!url.isValid() || !url.userInfo().isEmpty() || url.port() != -1 || url.hasQuery()) return {};
+    const bool https = url.scheme() == "https" && url.host() == "share.app.lazaruslabs.com.br" && url.path() == "/join";
+    const bool native = url.scheme() == "lazarus-share" && url.host() == "join" && url.path().isEmpty();
+    if (!https && !native) return {};
+    return secret(url.fragment());
 }
 QString room(const QByteArray &secret) {
     return QString::fromLatin1(QCryptographicHash::hash("lazarus-share/room/v1:" + secret, QCryptographicHash::Sha256).toHex());
