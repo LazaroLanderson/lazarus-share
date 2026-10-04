@@ -516,7 +516,10 @@ suas próprias licenças. Consulte [THIRD_PARTY.md](docs/THIRD_PARTY.md) e os
 
 ### Desenvolvimento 0.2.1
 
-A atualização de desempenho e recuperação está em validação; os downloads públicos
-continuam na versão publicada até o aceite. Veja [notas 0.2.1](docs/releases/0.2.1.md)
+A atualização de desempenho e recuperação foi medida no Intel Iris Xe; a 0.2.1
+é entregue inicialmente em release de rascunho. As 18 combinações passaram nos
+limites de FPS/latência após uma repetição intercalada. Em Baixa/hardware com
+quatro viewers, a CPU do host caiu 21,9%; os ganhos não são uniformes em Alta/Nativo.
+Os downloads públicos continuam na versão publicada. Veja [notas 0.2.1](docs/releases/0.2.1.md)
 e [método/resultados de desempenho](docs/PERFORMANCE-0.2.1.md). O benchmark local
 não captura tela nem altera os serviços da VPS.

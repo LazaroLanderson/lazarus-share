@@ -80,3 +80,10 @@ Desktop.ini
 /infra/acme/
 /infra/acme-webroot/
 *.jsonl
+
+# Deliberately exported synthetic benchmark aggregates, without connection data.
+!/docs/benchmarks/0.2.1-results.jsonl
+!/docs/benchmarks/0.2.1-initial-matrix.jsonl
+!/docs/benchmarks/0.2.1-high2-software-retest.jsonl
+!/docs/benchmarks/0.2.1-vp8-before-speed.jsonl
+!/docs/benchmarks/0.2.1-display.jsonl

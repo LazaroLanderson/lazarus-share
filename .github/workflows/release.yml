@@ -100,7 +100,7 @@ jobs:
             echo 'Refusing to overwrite a published release'; exit 1
           fi
           gh release upload "v$VERSION" --repo "$GITHUB_REPOSITORY" --clobber LazarusShare.exe LazarusShare-x86_64.AppImage SHA256SUMS
-          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --notes-file notes.md
           gh api "repos/$GITHUB_REPOSITORY/releases" > "$RUNNER_TEMP/releases.json"
           python3 - <<'PY'
           import hashlib,json,os
