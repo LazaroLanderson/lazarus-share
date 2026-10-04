@@ -9,6 +9,8 @@ import hmac
 import os
 from pathlib import Path
 import secrets
+import runpy
+import struct
 import shutil
 import socket
 import subprocess
@@ -20,6 +22,28 @@ def port():
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         return listener.getsockname()[1]
+
+
+def verify_allocation(port_number, username, password, *, expired=False):
+    # Reuse the tested STUN framing helper without changing infrastructure code.
+    framing = runpy.run_path('infra/tests/turn_allocations.py')
+    attribute, exchange = framing['attribute'], framing['exchange']
+    with socket.create_connection(('127.0.0.1', port_number), timeout=3) as connection:
+        requested = attribute(0x19, b'\x11\0\0\0')
+        kind, challenge = exchange(connection, requested)
+        if kind != 0x113 or 0x14 not in challenge or 0x15 not in challenge:
+            raise SystemExit('Expected TURN authentication challenge')
+        realm, nonce = challenge[0x14], challenge[0x15]
+        key = hashlib.md5(username.encode() + b':' + realm + b':' + password.encode()).digest()
+        body = requested + attribute(6, username.encode()) + attribute(0x14, realm) + attribute(0x15, nonce)
+        kind, response = exchange(connection, body, key)
+        if expired:
+            error = response.get(9, b'\0\0\0\0')
+            code = (error[2] & 7) * 100 + error[3]
+            if kind != 0x113 or code != 401:
+                raise SystemExit('Expired credentials were accepted for a new allocation')
+        elif kind != 0x103 or 0x0d not in response or not 0 < struct.unpack('!I', response[0x0d])[0] <= 6:
+            raise SystemExit('Fixture did not grant the requested short allocation lifetime')
 
 
 with tempfile.TemporaryDirectory(prefix='lazarus-renewal-') as directory:
@@ -67,6 +91,7 @@ with tempfile.TemporaryDirectory(prefix='lazarus-renewal-') as directory:
             # New credential per scenario. No credential is logged or persisted.
             username = f'{int(time.time()) + 12}:{secrets.token_hex(8)}'
             password = base64.b64encode(hmac.new(secret.encode(), username.encode(), hashlib.sha1).digest()).decode()
+            verify_allocation(udp, username, password)
             from urllib.parse import quote
             uri = f'{scheme}://{quote(username, safe="")}:{quote(password, safe="")}@127.0.0.1:{tls if scheme == "turns" else udp}{transport}'
             try:
@@ -76,6 +101,7 @@ with tempfile.TemporaryDirectory(prefix='lazarus-renewal-') as directory:
                 raise SystemExit('Relay expiry test timed out') from None
             if result.returncode:
                 raise SystemExit('Relay expiry test failed; credentials omitted')
+            verify_allocation(udp, username, password, expired=True)
             print(f'{scheme} {transport or "default"}: allocation refreshed beyond credential expiry', flush=True)
     finally:
         if image:

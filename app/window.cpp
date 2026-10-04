@@ -265,7 +265,7 @@ void Window::message(const QJsonObject &m) {
             c.generation = generation; c.pendingSignals = {}; c.exhausted = false; startPeer(id);
         } else if (kind == "relay-consent") {
             c.remoteConsent = body["enabled"].toBool(); log("relay_consent", id);
-            if (!c.remoteConsent) { c.renewal.cancel(); c.relayRequested=false; c.pendingRestart=0; c.pendingSignals={}; c.turns.clear(); c.turnExpiry=0; }
+            if (!c.remoteConsent) { c.renewal.cancel(); c.relayRequested=false; c.pendingRestart=0; c.pendingSignals={}; c.turns.clear(); c.turnExpiry=0;c.turnEpoch=0; }
             if (!c.remoteConsent && c.transport >= 0) { c.media.reset(); c.exhausted = true; row(id, "Relay desabilitado pelo outro participante"); }
             if (host_ && c.failed && !c.fatalMedia && c.localConsent && c.remoteConsent) { c.exhausted = false; requestRelay(id); }
         } else if (kind == "profile") {
@@ -490,7 +490,7 @@ void Window::editIdentity() {
         c->localConsent = profile_.relay; signal(id, {{"kind","profile"},{"profile",profile_.json()}});
         signal(id, {{"kind","relay-consent"},{"enabled",c->localConsent}});
         if (!c->localConsent) {
-            send({{"type","relay"},{"peer",id},{"enabled",false}}); c->turns.clear(); c->turnExpiry=0; c->renewal.cancel(); c->pendingRestart=0; c->pendingSignals={}; c->relayRequested = false;
+            send({{"type","relay"},{"peer",id},{"enabled",false}}); c->turns.clear(); c->turnExpiry=0;c->turnEpoch=0; c->renewal.cancel(); c->pendingRestart=0; c->pendingSignals={}; c->relayRequested = false;
             if (c->transport >= 0) { c->media.reset(); c->exhausted = true; row(id,"Relay desabilitado"); }
         } else if (host_ && c->failed && c->remoteConsent && !c->exhausted) requestRelay(id);
     }

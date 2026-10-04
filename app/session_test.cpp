@@ -60,6 +60,15 @@ struct WindowTestAccess {
             else if(c.generation!=before.generation || c.media.get()!=before.media)return false;
         }return true;
     }
+    static void revoke(Window &guest){for(auto &[id,c]:guest.peers_)guest.signal(id,{{"kind","relay-consent"},{"enabled",false}});}
+    static void allow(Window &guest){for(auto &[id,c]:guest.peers_)guest.signal(id,{{"kind","relay-consent"},{"enabled",true}});}
+    static bool revokedReply(Window &host,const QString &id){
+        auto &c=*host.peers_.at(id);if(c.remoteConsent || c.media || c.renewal.pending || c.relayRequested || c.pendingRestart)return false;
+        auto epoch=c.turnEpoch;
+        host.message({{"type","turn"},{"peer",id},{"host","127.0.0.1"},{"username",QString::number(epoch+100)+":revoked"},{"password","test-only"},{"expires",3600}});
+        return !c.media && c.turnEpoch==epoch && c.turns.isEmpty();
+    }
+    static void beginRenewal(Window &w){for(auto &[id,c]:w.peers_)c->renewal.requested(w.time_.elapsed());}
     static unsigned decoded(Window &w){unsigned count=0;for(auto &[id,c]:w.peers_)if(c->media)count+=PeerTestAccess::decoded(*c->media);return count;}
     static bool unchanged(Window &w,const std::vector<Snapshot> &saved){for(auto &s:saved){auto &c=*w.peers_.at(s.id);if(c.media.get()!=s.media || c.generation!=s.generation || c.transport!=s.transport)return false;}return true;}
     static bool pausedReply(Window &w){
@@ -147,7 +156,11 @@ int main(int argc, char **argv) {
         } else if(stage==17 && elapsed.elapsed()-approvedAt>1500){
             if(!WindowTestAccess::reconnectExpired(host,saved.front())){std::cerr<<"Expired credentials started an allocation\n";app.quit();return;}stage=18;
         } else if(stage==18 && WindowTestAccess::reconnected(host,saved)){
-            button(host,"Parar compartilhamento")->click();stage=4;
+            WindowTestAccess::beginRenewal(host);for(auto &g:guests)WindowTestAccess::revoke(*g);stage=19;
+        } else if(stage==19 && std::all_of(saved.begin(),saved.end(),[&](auto &s){return WindowTestAccess::revokedReply(host,s.id);})){
+            for(auto &g:guests)WindowTestAccess::allow(*g);
+            button(host,"Parar compartilhamento")->click();approvedAt=elapsed.elapsed();stage=20;
+        } else if(stage==20 && elapsed.elapsed()-approvedAt>300){stage=4;
         } else if(stage==13 && WindowTestAccess::recovered(host,saved)){
             if(!WindowTestAccess::terminal(host,saved.front())){std::cerr<<"Fallback was not bounded or stale callback was accepted\n";app.quit();return;}
             share(host,1);stage=14;
