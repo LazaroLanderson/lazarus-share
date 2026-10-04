@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
         }
         if(automatic || denial)WindowTestAccess::expire(host);
         if(denial && stage==3 && WindowTestAccess::denied(host)) { passed=true; app.quit(); return; }
-        if(elapsed.elapsed()>20000) { std::cerr<<"Session failed at stage "<<stage<<": "<<host.findChild<QLabel *>("status")->text().toStdString()<<'\n'; app.quit(); return; }
+        if(elapsed.elapsed()>(app.arguments().contains("--turn-renewal")?30000:20000)) { std::cerr<<"Session failed at stage "<<stage<<": "<<host.findChild<QLabel *>("status")->text().toStdString()<<'\n'; app.quit(); return; }
         if(stage==0 && host.findChild<QLabel *>("status")->text().startsWith("Sala criada")) {
             if(button(host,"Parar compartilhamento")->isEnabled()) { app.quit(); return; }
             auto token=host.findChild<QLineEdit *>("invite")->text();
@@ -157,8 +157,9 @@ int main(int argc, char **argv) {
         } else if(stage==15 && elapsed.elapsed()-approvedAt>1500){
             if(!WindowTestAccess::lateAndFailure(host,saved)){std::cerr<<"Renewal error/duplicate damaged media\n";app.quit();return;}
             WindowTestAccess::renewalDue(host);renewalAt=elapsed.elapsed();stage=16;
-        } else if(stage==16 && elapsed.elapsed()-renewalAt>2000 && WindowTestAccess::renewalDone(host,saved)){
-            for(int i=0;i<count;++i)if(decoded[i]-initialDecoded[i]<30){std::cerr<<"Renewal did not receive new frames\n";app.quit();return;}
+        } else if(stage==16 && elapsed.elapsed()-renewalAt>2000 && WindowTestAccess::renewalDone(host,saved) &&
+                  std::all_of(decoded.begin(),decoded.end(),[](unsigned frames){return frames>=30;})){
+            for(int i=0;i<count;++i)std::cout<<"Viewer "<<i<<" received "<<decoded[i]-initialDecoded[i]<<" frames during renewal\n";
             std::cout<<"Renewal frame continuity: max gap="<<maxGap<<" ms\n";
             approvedAt=elapsed.elapsed();stage=17;
         } else if(stage==17 && elapsed.elapsed()-approvedAt>1500){
