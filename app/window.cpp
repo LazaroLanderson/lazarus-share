@@ -22,6 +22,7 @@
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
 #include <QRegularExpression>
+#include <QDateTime>
 
 Window::Window(bool onboarding) : capture_(this), audio_(this) {
     profile_ = Profile::load();
@@ -147,11 +148,12 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
         }
         for (auto &[id, c] : peers_) {
             if (!host_ || !sharing_ || c->selecting || c->fatalMedia || c->exhausted) continue;
+            if (c->renewal.timedOut(now)) { c->renewal.failed(now); log("turn_renewal_failed", id, {{"error_code","timeout"}}); }
             if (c->relayRequested && now - c->started >= 15000) { c->relayRequested = false; c->exhausted = true; row(id,"Relay não respondeu — tentar novamente"); log("relay_timeout", id); }
             if (!c->media) continue;
             if (c->media->connected()) {
                 c->everConnected = true; c->started = now;
-                if (c->transport >= 0 && c->turnExpiry > 0 && now >= c->turnExpiry - 300000 && !c->relayRequested) requestRelay(id);
+                if (c->transport >= 0 && c->localConsent && c->remoteConsent && !c->relayRequested && c->renewal.due(now, c->turnExpiry)) renewTurn(id);
                 continue;
             }
             const qint64 timeout = c->everConnected ? 5000 : (c->transport < 0 ? 20000 : 15000);
@@ -259,17 +261,18 @@ void Window::message(const QJsonObject &m) {
             bool relay = body["relay"].toBool();
             if (relay && (!c.localConsent || !c.remoteConsent)) return;
             c.transport = body["transport"].toInt(relay ? 0 : -1);
-            if (c.transport < -1 || c.transport > 2 || (relay && c.turns.isEmpty())) { c.pendingRestart = generation; return; }
+            if (c.transport < -1 || c.transport > 2 || (relay && (c.turns.isEmpty() || c.turnExpiry<=time_.elapsed()))) { c.pendingRestart = generation; return; }
             c.generation = generation; c.pendingSignals = {}; c.exhausted = false; startPeer(id);
         } else if (kind == "relay-consent") {
             c.remoteConsent = body["enabled"].toBool(); log("relay_consent", id);
+            if (!c.remoteConsent) { c.renewal.cancel(); c.relayRequested=false; c.pendingRestart=0; c.pendingSignals={}; c.turns.clear(); c.turnExpiry=0; }
             if (!c.remoteConsent && c.transport >= 0) { c.media.reset(); c.exhausted = true; row(id, "Relay desabilitado pelo outro participante"); }
             if (host_ && c.failed && !c.fatalMedia && c.localConsent && c.remoteConsent) { c.exhausted = false; requestRelay(id); }
         } else if (kind == "profile") {
             auto p = body["profile"].toObject(); auto name = normalizedNickname(p["nickname"].toString());
             if (!name.isEmpty()) { c.nickname = name; c.avatar = qBound(0,p["avatar"].toInt(),9); row(id, "Perfil atualizado"); log("profile_updated", id); }
         } else if (kind == "sharing" && !host_) {
-            if (!body["enabled"].toBool()) { ++c.selection;c.selecting=false;c.media.reset(); c.kbps = 0;c.receivedSize={};c.route="Aguardando compartilhamento";c.metrics={{"stage","paused"},{"video_fps",0},{"kbps",0},{"selected_pair",false}}; video_->clearFrame("Host não está compartilhando."); metrics_->setText("Aguardando compartilhamento"); }
+            if (!body["enabled"].toBool()) { c.renewal.cancel();c.relayRequested=false;c.pendingRestart=0;c.pendingSignals={};++c.selection;c.selecting=false;c.media.reset(); c.kbps = 0;c.receivedSize={};c.route="Aguardando compartilhamento";c.metrics={{"stage","paused"},{"video_fps",0},{"kbps",0},{"selected_pair",false}}; video_->clearFrame("Host não está compartilhando."); metrics_->setText("Aguardando compartilhamento"); }
         } else if (kind == "relay-request" && !host_) {
             if (c.localConsent && c.remoteConsent) send({{"type", "relay"}, {"peer", id}, {"enabled", true}});
         } else if (kind == "connection-failure" && host_ && sharing_ && generation == c.generation && !c.fatalMedia) {
@@ -284,6 +287,12 @@ void Window::message(const QJsonObject &m) {
         if (!c.localConsent || !c.remoteConsent) { notice("Configuração de relay não autorizada; ignorada."); return; }
         auto host = m["host"].toString(); auto username = m["username"].toString(); auto password = m["password"].toString();
         if (host.contains('/') || host.contains('@') || host.isEmpty() || username.isEmpty() || password.isEmpty()) return;
+        // The timestamp in TURN REST usernames prevents delayed/duplicate replies
+        // from extending credential validity. Keep the public protocol unchanged.
+        bool epochValid=false;
+        qint64 epoch=username.section(':',0,0).toLongLong(&epochValid);
+        qint64 remaining=epoch-QDateTime::currentSecsSinceEpoch();
+        if (!epochValid || remaining<=0 || epoch<=c.turnEpoch) return;
         auto user = QString::fromLatin1(QUrl::toPercentEncoding(username)); auto pass = QString::fromLatin1(QUrl::toPercentEncoding(password));
         c.turns.clear();
         for (auto entry : m["endpoints"].toArray()) {
@@ -292,9 +301,14 @@ void Window::message(const QJsonObject &m) {
             url.setUserName(username); url.setPassword(password); c.turns.append(url.toString(QUrl::FullyEncoded));
         }
         if (c.turns.isEmpty()) c.turns = {QString("turn://%1:%2@%3:3478").arg(user,pass,host), QString("turn://%1:%2@%3:3478?transport=tcp").arg(user,pass,host), QString("turns://%1:%2@%3:5349").arg(user,pass,host)};
-        c.turnExpiry = time_.elapsed() + qBound(60, m["expires"].toInt(3600), 3600) * 1000LL; c.relayRequested = false;
+        c.turnEpoch=epoch;
+        c.turnExpiry = time_.elapsed() + qMin(remaining, qint64(qBound(1, m["expires"].toInt(3600), 3600))) * 1000LL;
+        const bool awaitingConnection=c.relayRequested;
+        c.relayRequested = false;
+        if (c.renewal.pending || c.renewal.failures) log("turn_renewal_completed",id);
+        c.renewal.completed();
         log("turn_credentials_ready", id);
-        if (host_ && sharing_ && c.relayRequested == false && c.failed) restart(id, c.transport < 0 ? 0 : c.transport);
+        if (host_ && sharing_ && awaitingConnection && c.failed && !c.fatalMedia && !c.exhausted) restart(id, c.transport < 0 ? 0 : c.transport);
         else if (c.pendingRestart > c.generation) {
             c.generation = c.pendingRestart; c.pendingRestart = 0; startPeer(id);
             auto pending = c.pendingSignals; c.pendingSignals = {};
@@ -307,7 +321,11 @@ void Window::message(const QJsonObject &m) {
     else if (type == "host_offline") notice("Host perdeu a sinalização; aguardando reconexão por até 60 segundos.");
     else if (type == "error") {
         QString code = m["code"].toString(); log("signaling_error", id, {{"error_code", code == "turn_unavailable" ? "turn_unavailable" : "signaling_rejected"}}); notice("Serviço de salas: " + code);
-        if (code == "turn_unavailable" && peers_.contains(id)) { peers_[id]->exhausted = true; peers_[id]->relayRequested = false; row(id,"Relay indisponível no servidor"); }
+        if (code == "turn_unavailable" && peers_.contains(id)) {
+            auto &c=*peers_[id];
+            if(c.renewal.pending){c.renewal.failed(time_.elapsed());log("turn_renewal_failed",id,{{"error_code","turn_unavailable"}});}
+            else if(c.relayRequested){c.exhausted=true;c.relayRequested=false;row(id,"Relay indisponível no servidor");}
+        }
         if (code == "resume_failed" || code == "room_unavailable" || code == "create_failed") { stop(); notice("Sala indisponível: " + code); }
     }
 }
@@ -442,7 +460,7 @@ void Window::selectAudio() {
     audio_.select(selected); refreshAudio(); audioStatus_->setText(audio_.selected().isEmpty() ? "Áudio desligado." : "Transmitindo somente os aplicativos marcados.");
 }
 void Window::diagnostics() {
-    QJsonObject report{{"version", "0.2.1"}, {"events", log_.events()}, {"profile", profile_.json()}};
+    QJsonObject report{{"version", "0.2.2"}, {"events", log_.events()}, {"profile", profile_.json()}};
     auto path = QFileDialog::getSaveFileName(this, "Exportar diagnóstico sem segredos", "diagnostico.json", "JSON (*.json)");
     if (path.isEmpty()) return; QFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(report).toJson()) < 0) notice("Não foi possível exportar o diagnóstico.");
@@ -472,7 +490,7 @@ void Window::editIdentity() {
         c->localConsent = profile_.relay; signal(id, {{"kind","profile"},{"profile",profile_.json()}});
         signal(id, {{"kind","relay-consent"},{"enabled",c->localConsent}});
         if (!c->localConsent) {
-            send({{"type","relay"},{"peer",id},{"enabled",false}}); c->turns.clear(); c->relayRequested = false;
+            send({{"type","relay"},{"peer",id},{"enabled",false}}); c->turns.clear(); c->turnExpiry=0; c->renewal.cancel(); c->pendingRestart=0; c->pendingSignals={}; c->relayRequested = false;
             if (c->transport >= 0) { c->media.reset(); c->exhausted = true; row(id,"Relay desabilitado"); }
         } else if (host_ && c->failed && c->remoteConsent && !c->exhausted) requestRelay(id);
     }
@@ -502,21 +520,35 @@ void Window::share() {
 void Window::stopSharing() {
     bool previous = sharing_ || capturePending_; sharing_ = capturePending_ = false;
     capture_.stop(); audio_.stop();
-    if (host_) for (auto &[id,c] : peers_) { if (!c->session.isEmpty()) signal(id, {{"kind","sharing"},{"enabled",false}}); ++c->generation;++c->selection;c->selecting=false;c->media.reset(); c->kbps = 0; c->exhausted = false;c->route="Aguardando compartilhamento";c->metrics={{"stage","paused"},{"video_fps",0},{"kbps",0},{"selected_pair",false}};row(id,c->route); }
+    if (host_) for (auto &[id,c] : peers_) { if (!c->session.isEmpty()) signal(id, {{"kind","sharing"},{"enabled",false}}); c->renewal.cancel();c->relayRequested=false;c->pendingRestart=0;c->pendingSignals={};++c->generation;++c->selection;c->selecting=false;c->media.reset(); c->kbps = 0; c->exhausted = false;c->route="Aguardando compartilhamento";c->metrics={{"stage","paused"},{"video_fps",0},{"kbps",0},{"selected_pair",false}};row(id,c->route); }
     share_->setEnabled(active_ && host_ && created_); pause_->setEnabled(false); change_->setEnabled(false); refreshAudio();
     if (previous) { log("sharing_stopped"); metrics_->setText("Sem compartilhamento | upload 0 kbps"); notice("Compartilhamento parado. A sala continua aberta."); }
 }
 void Window::restart(const QString &id, int transport) {
     auto it=peers_.find(id); if (it==peers_.end() || !host_ || !sharing_) return; auto &c=*it->second;
+    if(transport>=0 && (!c.localConsent || !c.remoteConsent))return;
+    if(transport>=0 && (c.turns.isEmpty() || c.turnExpiry<=time_.elapsed())) {
+        c.transport=transport;c.failed=true;c.everConnected=false;requestRelay(id);return;
+    }
     c.transport=transport; ++c.generation; c.pendingSignals={}; c.exhausted=false;
     signal(id, {{"kind","restart"},{"generation",c.generation},{"relay",transport>=0},{"transport",transport}}); startPeer(id);
 }
 void Window::requestRelay(const QString &id) {
     auto it=peers_.find(id); if(it==peers_.end())return; auto &c=*it->second;
     if(!c.localConsent || !c.remoteConsent || c.relayRequested || !sharing_)return;
-    if (!c.turns.isEmpty() && c.turnExpiry > time_.elapsed() + 300000) { c.everConnected=false; restart(id,0); return; }
+    if(c.media && c.media->connected() && !c.failed){renewTurn(id);return;}
+    if (!c.turns.isEmpty() && c.turnExpiry > time_.elapsed()) { c.everConnected=false; restart(id,c.transport<0?0:c.transport); return; }
+    c.renewal.cancel();
     c.relayRequested=true; c.started=time_.elapsed(); c.media.reset(); c.failed=true;
     signal(id, {{"kind","relay-request"}}); send({{"type","relay"},{"peer",id},{"enabled",true}}); log("relay_requested",id); row(id,"Solicitando relay autorizado");
+}
+void Window::renewTurn(const QString &id) {
+    auto it=peers_.find(id);if(it==peers_.end())return;auto &c=*it->second;
+    if(!host_ || !sharing_ || !c.localConsent || !c.remoteConsent || c.renewal.pending || c.relayRequested || !c.media || !c.media->connected())return;
+    bool retry=c.renewal.failures>0;c.renewal.requested(time_.elapsed());
+    signal(id,{{"kind","relay-request"}});
+    send({{"type","relay"},{"peer",id},{"enabled",true}});
+    log(retry?"turn_renewal_retry":"turn_renewal_requested",id,{{"attempt",int(c.renewal.failures)+1}});
 }
 void Window::advance(const QString &id) {
     auto &c=*peers_.at(id); c.failed=true; log("connection_failed",id);

@@ -523,3 +523,12 @@ quatro viewers, a CPU do host caiu 21,9%; os ganhos não são uniformes em Alta/
 Os downloads públicos continuam na versão publicada. Veja [notas 0.2.1](docs/releases/0.2.1.md)
 e [método/resultados de desempenho](docs/PERFORMANCE-0.2.1.md). O benchmark local
 não captura tela nem altera os serviços da VPS.
+
+### Correção 0.2.2
+
+Renovação de credenciais TURN em segundo plano, preservando a transmissão ativa.
+As novas credenciais são usadas em futuras reconexões, sem reiniciar vídeo ou
+encoder a cada renovação. Falhas na emissão são repetidas sem derrubar a mídia.
+Atualize os dois PCs para corrigir ambos os sentidos de compartilhamento.
+Consulte [notas 0.2.2](docs/releases/0.2.2.md). Entrega em rascunho, sem mudanças
+na VPS; testes locais não substituem uma sessão longa entre PCs reais.

@@ -39,7 +39,7 @@ void DiagnosticLog::prune() {
 }
 void DiagnosticLog::append(QString event, QJsonObject fields) {
     auto now = QDateTime::currentMSecsSinceEpoch(); if (now-lastPrune_ >= 60000) { prune(); lastPrune_=now; } const QString base = directory_ + "/events-0.jsonl";
-    auto value = sanitized(fields); value["event"] = event; value["utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs); value["version"] = "0.2.1";
+    auto value = sanitized(fields); value["event"] = event; value["utc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs); value["version"] = "0.2.2";
 #ifdef LAZARUS_BUILD_ID
     value["build"] = LAZARUS_BUILD_ID;
 #endif

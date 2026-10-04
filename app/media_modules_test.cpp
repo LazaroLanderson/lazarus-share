@@ -1,4 +1,5 @@
 #include "bitrate.h"
+#include "turnrenewal.h"
 #include "frameprep.h"
 #include "encoder.h"
 #include "videoview.h"
@@ -14,6 +15,18 @@
 static void check(bool value,const char *message){if(!value)throw std::runtime_error(message);}
 int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv);
  try {
+    TurnRenewal renewal;
+    check(!renewal.due(0,0),"No credentials scheduled renewal");
+    check(!renewal.due(299999,600000) && renewal.due(300000,600000),"Renewal margin");
+    renewal.requested(300000);check(!renewal.due(400000,600000),"Concurrent renewal");
+    check(!renewal.timedOut(314999) && renewal.timedOut(315000),"Renewal timeout");
+    qint64 now=315000;
+    for(auto delay:{30000,60000,120000,300000,300000}){
+        renewal.failed(now);check(!renewal.pending && renewal.nextAttempt==now+delay,"Renewal backoff");
+        check(!renewal.due(now+delay-1,600000) && renewal.due(now+delay,600000),"Premature retry");now+=delay;renewal.requested(now);
+    }
+    renewal.completed();check(!renewal.pending && renewal.failures==0 && renewal.nextAttempt==0,"Renewal success reset");
+    renewal.requested(1);renewal.cancel();check(!renewal.pending && !renewal.timedOut(99999),"Canceled renewal");
     VideoTimeline timeline;
     check(timeline.map(100*GST_SECOND,GST_SECOND)==GST_SECOND,"Late viewer clock anchor");
     check(timeline.map(100*GST_SECOND+33333333,GST_SECOND+40000000)==GST_SECOND+33333333,"UI jitter changed capture spacing");

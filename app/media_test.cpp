@@ -40,6 +40,12 @@ int main(int argc, char **argv) {
     bool stall=app.arguments().contains("--encoder-stall"),blocked=false;int stalls=0;
     bool bitrateCeiling=app.arguments().contains("--bitrate-ceiling");QElapsedTimer elapsed;elapsed.start();std::vector<double> videoRates;
     bool slow=app.arguments().contains("--slow-display"),slowed=false;unsigned maxDepth=0;double knownDrops=0,rawFps=0,availableFps=0;
+    int relayDuration=0,credentialLifetime=0;
+    for(auto argument:app.arguments()){
+        if(argument.startsWith("--relay-duration="))relayDuration=argument.section('=',1).toInt()*1000;
+        if(argument.startsWith("--credential-lifetime="))credentialLifetime=argument.section('=',1).toInt()*1000;
+    }
+    qint64 lastFrameAt=0,maxRelayGap=0;int framesAfterExpiry=0;
     bool stress = app.arguments().contains("--stress-quality");
     std::atomic<quint64> encodedBytes{0},rtpBytes{0};std::atomic<unsigned> frameCounts[2]{};bool bytesReset=false;double byteStart=0;
     Peer host(true), guest(false); Quality q = stress ? Quality{1920,1080,60,8000} : Quality{640,360,30,1200};
@@ -92,7 +98,8 @@ int main(int argc, char **argv) {
                 }
                 double error = sum / count; maxError = std::max(maxError,error); if (error > 10) ++badFrames;
             }
-            ++frames; if (!stress && !stall && !decoderFailure && !slow && !bitrateCeiling && frames >= 90) app.quit();
+            if(relayDuration){auto now=elapsed.elapsed();if(lastFrameAt && now>5000)maxRelayGap=qMax(maxRelayGap,now-lastFrameAt);lastFrameAt=now;if(now>credentialLifetime)++framesAfterExpiry;}
+            ++frames; if (!relayDuration && !stress && !stall && !decoderFailure && !slow && !bitrateCeiling && frames >= 90) app.quit();
             if(slow && !slowed && frames>=15)slowed=PeerTestAccess::slowDisplay(guest);
             if(decoderFailure && !decoderInjected && frames>=15)decoderInjected=PeerTestAccess::failDecoder(guest);
             if(stall && !blocked && frames>=15 && host.connected()){blocked=true;PeerTestAccess::dropEncoderInput(host);}
@@ -101,7 +108,8 @@ int main(int argc, char **argv) {
         if(bitrateCeiling && elapsed.elapsed()>=15000)app.quit();
         if(slow){maxDepth=std::max(maxDepth,PeerTestAccess::queueDepth(guest));if(elapsed.elapsed()>=4500)app.quit();}
         if (stress && elapsed.elapsed() >= 8000) app.quit();
-        if (elapsed.elapsed() > 20000) { failed = true; app.quit(); }
+        if(relayDuration && elapsed.elapsed()>=relayDuration)app.quit();
+        if (elapsed.elapsed() > (relayDuration?relayDuration+1000:20000)) { failed = true; app.quit(); }
     }); timer.start(); app.exec();
     gst_element_set_state(source, GST_STATE_NULL); gst_object_unref(sink); gst_object_unref(reference); gst_object_unref(source);
     gst_element_set_state(silence, GST_STATE_NULL); gst_object_unref(audio); gst_object_unref(silence);
@@ -115,6 +123,10 @@ int main(int argc, char **argv) {
     if(slow){if(!slowed || maxDepth>1 || !knownDrops || rawFps<=availableFps || badFrames>1)return 1;std::cout<<"Decoded queue stayed bounded: depth="<<maxDepth<<" dropped="<<knownDrops<<" raw FPS="<<rawFps<<" available FPS="<<availableFps<<"\n";}
     if (stress) std::cout << "1080p/60 pixel integrity: frames=" << frames << " bad=" << badFrames << " max RGB error=" << maxError << '\n';
     if (stress && (frames < 60 || badFrames > 1)) failed = true;
+    if(relayDuration){
+        std::cout<<"Relay expiry continuity: post-expiry frames="<<framesAfterExpiry<<" max frame gap="<<maxRelayGap<<" ms\n";
+        if(credentialLifetime<=0 || relayDuration<credentialLifetime+20000 || framesAfterExpiry<300 || maxRelayGap>500)return 1;
+    }
     if (failed || frames < (stress ? 60 : slow ? 30 : 90) || !host.connected() || !guest.connected() || route != (turns.isEmpty() ? "P2P direto" : "Relay criptografado")) return 1;
     std::cout << "Route: " << route.toStdString() << '\n';
     std::cout << "Encrypted local WebRTC video: " << frames << " decoded frames / " << host.encoderName().toStdString() << " / decoder " << decoder.toStdString() << "\n";

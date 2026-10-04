@@ -77,7 +77,7 @@ Sala não implica captura. Body `sharing {enabled}` informa transmissão/pausa.
 P2P e 0/1/2 correspondem a UDP/TCP/TLS. Somente o host coordena reinícios.
 `relay-consent {enabled}` transmite a preferência local autenticada. Consentimento
 persistido é reaplicado à nova sessão, mas o servidor só recebe os pedidos `relay`
-após o body `relay-request` coordenado pelo host em falha direta. Sem dupla autorização,
+após o body `relay-request` coordenado pelo host em falha direta ou renovação. Sem dupla autorização,
 não se configura TURN. `retry-request` solicita nova tentativa ao host.
 
 Resposta `turn` acrescenta `endpoints` (URLs sem credenciais), além de host,
@@ -104,3 +104,26 @@ falhas ICE/DTLS seguem no fluxo de transporte. Um erro de encoder permite uma
 única recuperação por software por conexão/configuração; falha posterior aguarda
 nova tentativa manual. `encoder_stall` indica ausência de saída, não prova defeito
 no hardware. Criar/reconectar uma sala parada não inicia captura.
+
+### Renovação TURN — 0.2.2
+
+Renovação é uma solicitação independente, sem mudar geração, codec, encoder,
+rota ou `Peer`. O host usa as mensagens existentes `relay-request`/`relay`, e a
+sinalização continua entregando `turn` a ambos. As novas credenciais ficam em
+cache para futuras alocações; a alocação ativa mantém seu usuário original e
+libnice renova sua duração. Não se adicionam servidores ao ICE em execução.
+
+Prazo de resposta: 15 segundos. Repetições após falha: 30, 60, 120 e depois
+300 segundos, com somente uma solicitação pendente por viewer. Erros de emissão
+não esgotam a conexão de mídia ativa. O timestamp TURN REST do username impede
+respostas antigas/duplicadas de prolongar validade; a validade é limitada por
+`expires` e pela expiração absoluta, usando relógio local correto. A sinalização
+não mudou; sua limitação de 30 segundos entre emissões continua aplicada.
+
+Uma recuperação real só inicia nova alocação com credenciais válidas. Parar ou
+revogar consentimento cancela solicitações e negociações pendentes; respostas
+posteriores não iniciam mídia. Atualizar o host é necessário para evitar o
+reinício antigo; atualizar os dois participantes cobre ambos os sentidos.
+
+Eventos locais permitidos: `turn_renewal_requested`, `turn_renewal_completed`,
+`turn_renewal_failed` e `turn_renewal_retry`; sem credenciais, IPs ou SDP.

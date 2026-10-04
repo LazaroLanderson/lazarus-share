@@ -5,6 +5,7 @@
 #include "protocol.h"
 #include "profile.h"
 #include "diagnostic.h"
+#include "turnrenewal.h"
 #include <QMainWindow>
 #include <QWebSocket>
 #include <QLineEdit>
@@ -33,7 +34,8 @@ private:
         QStringList turns;
         QString nickname, session, lastRoute;
         int avatar = 0, transport = -1, reconnectAttempts = 0;
-        qint64 turnExpiry = 0;
+        qint64 turnExpiry = 0, turnEpoch = 0;
+        TurnRenewal renewal;
         bool fatalMedia = false, exhausted = false, relayRequested = false, everConnected = false, modern = false;
         int generation = 1, retries = 0;
         bool software=false, selecting=false;
@@ -53,6 +55,7 @@ private:
     void stopSharing();
     void restart(const QString &id, int transport);
     void requestRelay(const QString &id);
+    void renewTurn(const QString &id);
     void advance(const QString &id);
     void log(const QString &event, const QString &id = {}, QJsonObject fields = {});
     void create();

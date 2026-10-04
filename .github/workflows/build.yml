@@ -22,6 +22,9 @@ jobs:
           QT_QPA_PLATFORM: offscreen
       - run: xvfb-run -a env QT_QPA_PLATFORM=xcb build/media-modules-test --require-gl
       - run: python3 server/tests/relay_local.py
+      - name: Verify TURN credential expiry with pinned production Coturn
+        run: |
+          LAZARUS_TURN_DOCKER_IMAGE="$(python3 -c 'from pathlib import Path; import re; print(re.search(r"image: (coturn/coturn:[^\s]+)", Path("infra/compose.single.yml").read_text())[1])')" python3 scripts/test-turn-expiry.py
       - run: |
           if wireplumber --help | grep -q -- '--profile'; then
             python3 server/tests/audio_isolated.py
@@ -30,6 +33,7 @@ jobs:
           fi
       - run: python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt && .venv/bin/python -m unittest discover -s server/tests -v
       - run: .venv/bin/python server/tests/automatic_relay.py
+      - run: .venv/bin/python scripts/test-turn-renewal-session.py
       - run: |
           .venv/bin/python server/tests/session_local.py --four-viewers
           .venv/bin/python server/tests/session_local.py --four-viewers --encoder-fallback
