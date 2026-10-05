@@ -12,6 +12,7 @@ from verify_dependencies import verify
 p = argparse.ArgumentParser()
 p.add_argument("--prefix", default=str(Path(sys.executable).resolve().parents[1]))
 p.add_argument("--binary", default="build/lazarus-share.exe")
+p.add_argument("--updater", default="build/lazarus-updater.exe")
 p.add_argument("--tool-prefix", default="", help="Cross tools prefix, e.g. /path/x86_64-w64-mingw32-")
 a = p.parse_args(); prefix = Path(a.prefix)
 def tool(name):
@@ -26,7 +27,8 @@ if not a.tool_prefix:
 else:
     for group in ("platforms", "tls"):
         shutil.copytree(prefix / "share/qt6/plugins" / group, app / group, dirs_exist_ok=True)
-queue = list(app.rglob("*.dll")) + [app / "lazarus-share.exe"]
+shutil.copy2(a.updater, app / "lazarus-updater.exe")
+queue = list(app.rglob("*.dll")) + [app / "lazarus-share.exe", app / "lazarus-updater.exe"]
 scanner = prefix / "libexec/gstreamer-1.0/gst-plugin-scanner.exe"
 if scanner.exists():
     shutil.copy2(scanner, app / scanner.name); queue.append(app / scanner.name)
@@ -60,6 +62,22 @@ shutil.copytree(repo / "docs/licenses", app / "licenses", dirs_exist_ok=True)
 # MSYS2's runtime packages provide dependency notices in share/licenses.
 if (prefix / "share/licenses").exists():
     shutil.copytree(prefix / "share/licenses", app / "licenses/upstream", dirs_exist_ok=True)
+# Qt Core helper gets its own transitive DLL closure, without the GUI/media runtime.
+runtime = app / "update-runtime"; runtime.mkdir()
+shutil.copy2(app / "lazarus-updater.exe", runtime / "lazarus-updater.exe")
+helper_queue = [runtime / "lazarus-updater.exe"]
+while helper_queue:
+    item = helper_queue.pop()
+    output = subprocess.check_output([tool("objdump"), "-p", str(item)], text=True)
+    for dll in re.findall(r"DLL Name:\s*(\S+)", output):
+        if dll.lower() in system or dll.lower().startswith(("api-ms-", "ext-ms-")): continue
+        destination = runtime / dll
+        if not destination.exists():
+            source = app / dll
+            if not source.exists(): raise SystemExit(f"Missing updater dependency: {dll}")
+            shutil.copy2(source, destination); helper_queue.append(destination)
+verify(runtime, tool("objdump"), system)
+(app / "lazarus-updater.exe").unlink()
 archive = dist / "windows-payload.zip"
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
     for file in app.rglob("*"):

@@ -15,6 +15,30 @@ O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 > abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
 
+## Atualizações dentro do aplicativo
+
+A partir da versão 0.2.4, os pacotes EXE (Windows) e AppImage (Linux) incluem um atualizador. Ao abrir,
+o aplicativo consulta uma vez as Releases públicas do GitHub, incluindo versões
+experimentais. Uma versão mais nova disponível para seu sistema aparece na faixa
+“Nova atualização disponível · Ver detalhes”. Releases lançadas com o aplicativo
+já aberto são detectadas na próxima abertura.
+
+A janela mostra as novidades e permite baixar, cancelar ou adiar. Após o download,
+“Reiniciar e atualizar” substitui o mesmo arquivo e reabre o programa. Uma sala
+ativa só é encerrada após confirmação. Nickname, cor, preferência de relay e
+os diagnósticos locais são preservados. A pasta do executável precisa permitir
+gravação e ter espaço para preparar o novo pacote; não há elevação automática.
+
+O download usa HTTPS e valida tamanho e SHA-256 fornecidos pelo GitHub. A versão
+anterior permanece como backup até a nova confirmar sua inicialização. Falhas
+na abertura restauram a anterior; transações interrompidas são recuperadas na
+próxima abertura. A limpeza afeta somente arquivos da própria atualização.
+
+A primeira versão com esse recurso deve ser baixada manualmente. As próximas
+podem ser atualizadas pelo app. Builds de desenvolvimento consultam versões,
+mas não substituem seus executáveis. Não há assinatura própria de pacotes nesta
+implementação: a origem é autenticada pelo HTTPS do GitHub.
+
 ## Downloads da versão experimental
 
 | Plataforma | Executável portátil |
@@ -542,3 +566,11 @@ Entrada por link HTTPS, aprovação opcional ao criar a sala e confirmação ant
 de trocar de sessão. Consulte [notas 0.2.3](docs/releases/0.2.3.md). A página
 `/join` e o servidor compatível devem estar disponíveis antes da distribuição
 dos executáveis atualizados.
+
+## Atualização integrada — 0.2.4
+
+A versão 0.2.4 consulta as Releases do GitHub ao abrir e permite baixar e instalar
+atualizações dentro do aplicativo, preservando o perfil e recuperando a versão
+anterior se a nova não iniciar. A primeira instalação da 0.2.4 exige download
+manual; as próximas versões podem ser instaladas pelo app. Não há mudanças de
+servidor ou de protocolo de mídia nesta entrega. Veja [notas 0.2.4](docs/releases/0.2.4.md).

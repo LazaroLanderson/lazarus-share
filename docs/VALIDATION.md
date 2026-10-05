@@ -203,3 +203,27 @@ criptografada por UDP, TCP e TLS, além de HTTPS/WSS e aprovação dos participa
 A VPS executa o commit `461e8022f507f8549cec082ba2b551e7608f34e5`; o timer
 de renovação do certificado está ativo. Testes em PCs reais, Windows 10/11 e
 30 minutos na Dtel continuam pendentes, incluindo o caso específico relatado.
+
+## Atualizador integrado
+
+Os testes `update` e `update-ui` validam seleção numérica e paginação de releases,
+rejeição de rascunhos e pacotes sem digest, download corrompido/incompleto/excessivo,
+falha HTTP, cancelamento e nova tentativa. Exercitam a substituição com caminhos
+contendo espaços, recuperação de transação interrompida, limpeza restrita aos
+arquivos próprios e restauração quando o processo falha ou não confirma em 60 s.
+O teste de interface confirma que recusar o reinício mantém a sala e o perfil.
+O teste `update` leva aproximadamente um minuto por exercitar o timeout real.
+
+Após empacotar, execute com o Lazarus Share fechado:
+
+```bash
+python3 scripts/test-update-package.py dist/LazarusShare-x86_64.AppImage dist/LazarusShare.AppDir/usr/libexec/update-runtime
+```
+
+No Windows, use `python scripts/test-update-package.py dist/LazarusShare.exe dist/windows-app/update-runtime`.
+Esse teste usa uma cópia do pacote, um runtime independente e uma transação
+exclusiva, verificando a confirmação pela janela real e a limpeza. No Linux,
+configurações e dados são isolados; no Windows, o registro do protocolo de
+convites é salvo e restaurado. O workflow executa esse teste em ambos os sistemas.
+Uma execução Linux em sandbox precisa permitir sockets locais para a eleição
+de instância única. O teste não substitui o executável original distribuído.

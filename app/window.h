@@ -18,6 +18,7 @@
 #include <QElapsedTimer>
 #include <map>
 #include <memory>
+class QVBoxLayout;
 class Window : public QMainWindow {
     Q_OBJECT
 public:
@@ -51,6 +52,7 @@ private:
         QJsonObject metrics;
         QSize receivedSize;
     };
+    void setupUpdates(QVBoxLayout *layout);
     void editIdentity();
     void updateIdentity();
     void share();

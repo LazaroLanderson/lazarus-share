@@ -28,6 +28,7 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     profile_ = Profile::load();
     setWindowTitle("Lazarus Share — sem login"); resize(940, 730); time_.start();
     auto *root = new QWidget(this); auto *layout = new QVBoxLayout(root); setCentralWidget(root);
+    setupUpdates(layout);
     auto *top = new QHBoxLayout; top->addStretch(); identity_ = new QPushButton; identity_->setObjectName("profile"); top->addWidget(identity_); layout->addLayout(top);
     connect(identity_, &QPushButton::clicked, this, &Window::editIdentity); updateIdentity();
     auto *form = new QFormLayout;

@@ -25,6 +25,15 @@ static DWORD run(std::wstring command, const std::wstring &directory, bool hidde
     CloseHandle(process.hThread); CloseHandle(process.hProcess); return code;
 }
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
+    // Join the updater-owned job before creating children, so rollback owns the full tree.
+    wchar_t jobName[256];
+    if (GetEnvironmentVariableW(L"LAZARUS_UPDATE_JOB", jobName, 256)) {
+        HANDLE job = OpenJobObjectW(JOB_OBJECT_ASSIGN_PROCESS, FALSE, jobName);
+        if (!job || !AssignProcessToJobObject(job, GetCurrentProcess())) { if (job) CloseHandle(job); return 1; }
+        CloseHandle(job);
+        SetEnvironmentVariableW(L"LAZARUS_UPDATE_JOB", nullptr);
+    }
+    SetEnvironmentVariableW(L"LAZARUS_LAUNCHER_PID", std::to_wstring(GetCurrentProcessId()).c_str());
     wchar_t launcher[32768];
     if (!GetModuleFileNameW(nullptr, launcher, 32768)) return 1;
     SetEnvironmentVariableW(L"LAZARUS_LAUNCHER_PATH", launcher);

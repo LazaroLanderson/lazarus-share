@@ -9,6 +9,7 @@ import subprocess
 
 p = argparse.ArgumentParser()
 p.add_argument("--binary", default="build/lazarus-share")
+p.add_argument("--updater", default="build/lazarus-updater")
 p.add_argument("--output", default="dist/LazarusShare.AppDir")
 p.add_argument("--qt-plugins", default="/usr/lib/x86_64-linux-gnu/qt6/plugins")
 a = p.parse_args()
@@ -17,8 +18,27 @@ if root.exists(): shutil.rmtree(root)
 root.mkdir(parents=True, exist_ok=True)
 binary = root / "usr/bin/lazarus-share"; binary.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(a.binary, binary)
+# This runtime is copied out of the AppImage before the old mount can disappear.
+updater_runtime = root / "usr/libexec/update-runtime"
+updater_runtime.mkdir(parents=True, exist_ok=True)
+shutil.copy2(a.updater, updater_runtime / "lazarus-updater")
+helper_queue = [updater_runtime / "lazarus-updater"]
+helper_seen = set()
+helper_sources = set()
+while helper_queue:
+    item = helper_queue.pop()
+    if item in helper_seen: continue
+    helper_seen.add(item)
+    output = subprocess.check_output(["ldd", str(item)], text=True)
+    if "not found" in output: raise SystemExit(f"Missing updater dependency: {output}")
+    for name, source in re.findall(r"\s+(\S+) => (/\S+)", output):
+        if re.match(r"^(ld-linux|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libresolv\.so)", name): continue
+        destination = updater_runtime / name
+        if not destination.exists():
+            shutil.copy2(source, destination); helper_queue.append(destination)
+            helper_sources.add(Path(source).resolve())
 libraries = root / "usr/lib"; libraries.mkdir(parents=True, exist_ok=True)
-queue = [binary]; seen = set(); bundled_sources = set()
+queue = [binary]; seen = set(); bundled_sources = helper_sources.copy()
 
 def copy(source, destination):
     destination.parent.mkdir(parents=True, exist_ok=True)

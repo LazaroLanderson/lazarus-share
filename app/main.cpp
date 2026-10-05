@@ -1,5 +1,6 @@
 #include "window.h"
 #include "activation.h"
+#include "update_transaction.h"
 #include "encoder.h"
 #include <QApplication>
 #include <QTimer>
@@ -8,10 +9,22 @@
 #include <iostream>
 #ifdef Q_OS_WIN
 #include <windows.h>
+#else
+#include <sys/prctl.h>
+#include <signal.h>
+#include <unistd.h>
 #endif
 int main(int argc, char **argv) {
 #ifdef Q_OS_WIN
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+#endif
+#ifndef Q_OS_WIN
+    // An extracted AppImage can have an outer runtime process; bind this child to it
+    // during an update so a crashed updater cannot leave an unconfirmed app running.
+    if (!qEnvironmentVariable("LAZARUS_UPDATE_TRANSACTION").isEmpty()) {
+        const auto parent = getppid(); prctl(PR_SET_PDEATHSIG, SIGKILL);
+        if (getppid() != parent) return 1;
+    }
 #endif
     // Disable GStreamer diagnostic logging by default: it can print SDP and IPs.
     qputenv("GST_DEBUG", "0");
@@ -52,8 +65,9 @@ int main(int argc, char **argv) {
     if (app.arguments().contains("--smoke-test")) QTimer::singleShot(500, &app, &QCoreApplication::quit);
     QCoreApplication::setOrganizationName("LazarusLabs");
     QCoreApplication::setApplicationName("LazarusShare");
-    QCoreApplication::setApplicationVersion("0.2.3");
+    QCoreApplication::setApplicationVersion(LAZARUS_VERSION);
     const bool smoke = app.arguments().contains("--smoke-test");
+    if (!smoke && !Updates::recover()) return 0;
     QString invite;
     for (const auto &arg : app.arguments().mid(1)) if (!arg.startsWith("--")) { invite = arg; break; }
     // Invalid external input is never forwarded to or allowed to disturb a session.
@@ -69,6 +83,12 @@ int main(int argc, char **argv) {
     if (!smoke) activation.registerProtocol();
     int result;
     { Window window(!smoke && invite.isEmpty()); window.show();
+      if (!smoke) QTimer::singleShot(0, &window, [&window] {
+          Updates::acknowledge();
+          const auto reason = qEnvironmentVariable("LAZARUS_UPDATE_ROLLBACK");
+          if (!reason.isEmpty()) QMessageBox::warning(&window, "Atualização", reason);
+          qunsetenv("LAZARUS_UPDATE_TRANSACTION"); qunsetenv("LAZARUS_UPDATE_ROLLBACK");
+      });
       QObject::connect(&activation, &Activation::invitation, &window, [&window](const QString &link) {
           if (link.isEmpty()) { window.showNormal(); window.raise(); window.activateWindow(); }
           else window.openInvite(link);

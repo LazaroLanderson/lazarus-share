@@ -1,4 +1,5 @@
 #include "window.h"
+#include "update.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
@@ -22,7 +23,14 @@ struct PeerTestAccess {
     }
     static void failEncoder(Peer &peer){auto *failure=g_error_new_literal(GST_STREAM_ERROR,GST_STREAM_ERROR_ENCODE,"Controlled encoder failure");auto *bus=gst_element_get_bus(peer.pipeline_);gst_bus_post(bus,gst_message_new_error(GST_OBJECT(peer.encoder_),failure,nullptr));g_error_free(failure);gst_object_unref(bus);}
 };
+struct UpdateTestAccess {
+    static void ready(UpdateClient &client) {
+        client.best_ = {"0.3.0", "Novidades", {}, QByteArray(64, 'a'), 100};
+        client.ready_ = true; emit client.available();
+    }
+};
 struct WindowTestAccess {
+    static void updateRoom(Window &window, const QString &link) { window.active_ = true; window.secret_ = Protocol::inviteSecret(link); }
     static bool inRoom(Window &w, const QString &link) { return w.active_ && w.secret_ == Protocol::inviteSecret(link); }
     struct Snapshot {QString id;int generation,transport;Peer *media;QString encoder;};
     static std::vector<Snapshot> snapshots(Window &w){std::vector<Snapshot> result;for(auto &[id,c]:w.peers_)result.push_back({id,c->generation,c->transport,c->media.get(),c->media?c->media->encoderName():QString{}});return result;}
@@ -113,6 +121,33 @@ int main(int argc, char **argv) {
     bool automatic=app.arguments().contains("--relay-auto"), denial=app.arguments().contains("--deny-relay"); int transport=0;
     for(auto argument:app.arguments())if(argument.startsWith("--relay-transport="))transport=argument.section('=',1).toInt();
     Profile{"José",3,true}.save(); Window host; host.show();
+    if (app.arguments().contains("--update-controls")) {
+        const auto link = Protocol::inviteLink(Protocol::randomBytes(16));
+        WindowTestAccess::updateRoom(host, link);
+        auto *client = host.findChild<UpdateClient *>(); auto *banner = host.findChild<QPushButton *>("updateBanner");
+        if (!client || !banner || !banner->isHidden()) return 1;
+#ifdef Q_OS_WIN
+        qputenv("LAZARUS_LAUNCHER_PATH", state.filePath("portable.exe").toUtf8());
+#else
+        qputenv("APPIMAGE", state.filePath("portable.AppImage").toUtf8());
+#endif
+        UpdateTestAccess::ready(*client); if (banner->isHidden()) return 1;
+        bool asked = false, preserved = false;
+        QTimer::singleShot(0, &host, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            QTimer::singleShot(0, &host, [&] {
+                auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+                if (box) { asked = true; box->button(QMessageBox::No)->click(); }
+            });
+            for (auto *b : dialog->findChildren<QPushButton *>()) if (b->text() == "Reiniciar e atualizar") { b->click(); break; }
+            preserved = WindowTestAccess::inRoom(host, link); dialog->reject();
+        });
+        banner->click();
+        const auto profile = Profile::load();
+        if (!asked || !preserved || profile.nickname != "José" || profile.avatar != 3 || !profile.relay) return 1;
+        std::cout << "Update banner and declined restart preserve active room and profile\n"; return 0;
+    }
     if (app.arguments().contains("--invite-controls")) {
         auto fail = [] { std::cerr << "Invitation UI check failed\n"; return 1; };
         auto *policy = host.findChild<QCheckBox *>("requireApproval");

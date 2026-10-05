@@ -52,6 +52,8 @@ jobs:
           dist/LazarusShare-x86_64.AppImage --appimage-extract-and-run --smoke-test
         env:
           QT_QPA_PLATFORM: offscreen
+      - name: Test real portable Linux update
+        run: python3 scripts/test-update-package.py dist/LazarusShare-x86_64.AppImage dist/LazarusShare.AppDir/usr/libexec/update-runtime
       - uses: actions/upload-artifact@v4
         with:
           name: LazarusShare-Linux
@@ -74,7 +76,7 @@ jobs:
             mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad
             mingw-w64-x86_64-libnice mingw-w64-x86_64-python mingw-w64-x86_64-openssl
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
-      - run: ctest --test-dir build -R "activation|protocol|profile|media-modules|media-encoder-creation" --output-on-failure
+      - run: ctest --test-dir build -R "activation|protocol|profile|update|media-modules|media-encoder-creation" --output-on-failure
         env:
           QT_QPA_PLATFORM: offscreen
       - run: python packaging/windows/test_tls.py
@@ -91,6 +93,8 @@ jobs:
             }
             if ($process.ExitCode -ne 0) { throw "Portable app failed: $argument ($($process.ExitCode))" }
           }
+      - name: Test real portable Windows update
+        run: python scripts/test-update-package.py dist/LazarusShare.exe dist/windows-app/update-runtime
       - uses: actions/upload-artifact@v4
         with:
           name: LazarusShare-Windows
