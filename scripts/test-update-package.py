@@ -60,7 +60,7 @@ transaction = None
 try:
     with tempfile.TemporaryDirectory(prefix="lazarus-package-update-") as scratch:
         scratch = Path(scratch)
-        env = os.environ | {"QT_QPA_PLATFORM": "offscreen", "GST_DEBUG": "0",
+        env = os.environ | {"QT_QPA_PLATFORM": "windows" if windows else "offscreen", "GST_DEBUG": "0",
             "XDG_DATA_HOME": str(scratch / "data"), "XDG_CONFIG_HOME": str(scratch / "config"),
             "XDG_CACHE_HOME": str(scratch / "cache")}
         if windows:
