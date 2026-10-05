@@ -33,7 +33,7 @@ scanner = prefix / "libexec/gstreamer-1.0/gst-plugin-scanner.exe"
 if scanner.exists():
     shutil.copy2(scanner, app / scanner.name); queue.append(app / scanner.name)
 plugins = app / "gstreamer-1.0"; plugins.mkdir(exist_ok=True)
-for plugin in ("coreelements", "app", "webrtc", "nice", "dtls", "srtp", "rtp", "rtpmanager", "vpx", "opus", "audioconvert", "audioresample", "audiomixer", "audiotestsrc", "videotestsrc", "videoconvertscale", "videorate", "d3d11", "wasapi2", "autodetect", "playback", "videoparsersbad", "openh264", "nvcodec", "qsv"):
+for plugin in ("coreelements", "app", "webrtc", "nice", "dtls", "srtp", "rtp", "rtpmanager", "vpx", "opus", "audioconvert", "audioresample", "volume", "audiomixer", "audiotestsrc", "videotestsrc", "videoconvertscale", "videorate", "d3d11", "wasapi2", "autodetect", "playback", "videoparsersbad", "openh264", "nvcodec", "qsv"):
     matches = list((prefix / "lib/gstreamer-1.0").glob(f"*gst{plugin}.dll"))
     if not matches: raise SystemExit(f"Required GStreamer plugin missing: {plugin}")
     target = plugins / matches[0].name; shutil.copy2(matches[0], target); queue.append(target)

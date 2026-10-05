@@ -1,139 +1,138 @@
-# Protocolo v1 e limites de privacidade
+# Protocolo v2 e limites de privacidade
 
-## Convite e autenticação
+## Compatibilidade e convite
 
-Convite = 16 bytes aleatórios codificados em Base32, sem padding (26 caracteres),
-compartilhados como `https://share.app.lazaruslabs.com.br/join#TOKEN`. A página
-encaminha o fragmento para `lazarus-share://join#TOKEN`, sem enviá-lo ao servidor.
-O cliente aceita somente esses formatos, sem credenciais, query ou porta explícita.
-O servidor recebe somente SHA-256(`lazarus-share/room/v1:` + segredo), nunca o
-token ou seu segredo. A credencial de administração é independente, 32 bytes
-aleatórios; o servidor conserva seu hash para retomada do host.
+Criação, retomada e entrada exigem `protocol: 2`. Versões anteriores recebem
+`error: protocol_update_required`; não existe modo de sala v1 nesta implementação.
+`created`, `joined`, `ready` e `room-state` identificam o protocolo. Clientes novos
+recusam `created`/`joined` de servidores antigos com orientação para atualizar o serviço.
+Atualizar o servidor antes de distribuir os clientes v2. Os clientes 0.2.6 usam v2; executáveis 0.2.5 e anteriores precisam atualizar.
 
-O WebSocket aceita `create`, `resume`, `join`, `approve`, `remove`, `signal`,
-`relay` e `end`. O servidor devolve `created`, `joined`, `waiting`, `ready`,
-`signal`, `turn`, `left`, `host_offline`, `ended` ou `error`.
+O convite continua sendo 16 bytes aleatórios em Base32, sem padding, em
+`https://share.app.lazaruslabs.com.br/join#TOKEN`. A página encaminha o fragmento
+para `lazarus-share://join#TOKEN`, sem enviá-lo ao servidor. Não são aceitos
+credenciais, query ou porta explícita. A identificação da sala continua
+SHA-256(`lazarus-share/room/v1:` + segredo), preservando o formato dos convites.
+O serviço nunca recebe o token/segredo. A credencial de administração é
+independente, de 32 bytes; apenas seu hash permanece na memória do servidor.
+WSS é obrigatório fora de loopback; TLS local pode usar a impressão exata do certificado.
 
-`create` aceita `requireApproval` booleano: o app atual envia `false` por padrão;
-se omitido, o servidor usa `true` para compatibilidade. A política é imutável durante
-a sala e preservada em `resume`. `created` e `joined` incluem `requireApproval`.
-Salas abertas emitem `joined` e `ready` automaticamente, sem `waiting`; o quinto
-espectador recebe `error: room_full` sem ser inserido. Salas com aprovação mantêm
-a fila (até 16 candidatos) e o limite de quatro admissões por `approve`.
+## Administração e participantes
 
-Cada `ready` inclui peer, session e desafio do outro lado. Cada cliente cria um
-desafio próprio de 128 bits; a sinalização não pode substituir esse desafio
-local. Um frame `signal` carrega JSON compacto codificado em Base64 e HMAC-SHA256,
-com chave derivada por HMAC do segredo do convite e domínio do protocolo. O
-envelope assinado inclui session, peer, sender, desafio do destinatário,
-sequência crescente e body. SDP, fingerprints, ICE, consentimento e reinícios
-são autenticados. Sessões e desafios impedem replay após reconexão.
+`create`, `resume` e `join` recebem desafio de 128 bits, perfil e capacidades.
+`created`/`joined` devolvem `peer`, o ID do próprio participante. O criador tem
+um ID estável durante sua retomada; convidados recebem novo ID e precisam de
+nova aprovação, quando exigida, após reconectar.
 
-Todos que possuem o convite conhecem a mesma chave. O protocolo protege contra
-um serviço de sinalização que desconheça esse segredo; não oferece identidades
-independentes nem proteção contra um participante malicioso que já tem o token.
-Não compartilhe o convite publicamente. WSS continua obrigatório fora de loopback.
+`requireApproval` é booleano, imutável na sala; omitido, usa `true` por segurança
+para integradores. O aplicativo envia `false` por padrão. O criador usa
+`approve {peer}`, `remove {peer}` e `end`. Convidados não administram a sala.
+São permitidos cinco participantes aprovados no total, incluindo o criador,
+e até dezesseis convidados contando a fila de aprovação.
 
-## Mídia e relay
+`room-state` contém `protocol`, `participants`, `broadcaster`, `revision`,
+`sharing` e `ownerOnline`. Cada participante listado contém `peer`, `profile`,
+`approved` e `owner`. Somente o administrador vê candidatos pendentes; um
+candidato recebe `joined` e aguarda aprovação antes de receber o estado da sala.
 
-Uma conexão `webrtcbin` por viewer: H.264 (hardware disponível) ou VP8 (CPU), e Opus, DTLS-SRTP. O host captura uma
-vez, mas codifica/envia por viewer para adaptar bitrate individualmente. As
-filas são limitadas para evitar crescimento de memória e latência. Resolução
-é uma caixa máxima preservando proporção; FPS depende da captura e do PC.
+Nickname é normalizado NFC, com até dez grafemas/80 unidades Unicode e sem
+controles. Avatar é inteiro de 0 a 9. Nomes não são identidades verificadas.
+`profile {profile}` atualiza o roster; o perfil também circula no canal autenticado
+quando existe uma conexão. A lista permanece somente em memória.
 
-A conexão inicial não contém servidores TURN. Depois de falha, cada lado envia
-consentimento assinado ao peer e pedido ao servidor. O cliente exige seu próprio
-consentimento e o consentimento autenticado do outro lado antes de aceitar TURN.
-O servidor também exige as duas autorizações e aprovação da entrada.
+Saída explícita do criador encerra todos os participantes. Sua queda emite
+`host_offline` e mantém a sala por até 60 segundos para `resume`, autenticado
+pela credencial de administração. Não há transferência de administração.
 
-O host inicia nova geração de conexão após autorização. O viewer espera seus
-próprios dados TURN antes de aplicar esse reinício. Credenciais vão pela conexão
-TLS, expiram após uma hora e são autenticadas pelo segredo exclusivo do Coturn.
-Relay nunca é ativado por uma tentativa automática de reconexão sem autorização.
+## Exclusividade do compartilhamento
 
-## Áudio
+Participantes aprovados enviam `share-request`. O servidor, sob trava por sala,
+reserva uma única vez por até 60 segundos. O primeiro pedido vence; os demais
+recebem `share_busy`. A reserva define `broadcaster`, incrementa `revision` e
+notifica todos com `sharing: false` antes de abrir o seletor de captura.
 
-Linux enumera apenas `Stream/Output/Audio` por serial PipeWire, excluindo o app.
-Captura apenas os seriais marcados; não captura saída global ou microfone.
-Não reconecta automaticamente um stream desaparecido a outro dispositivo.
-Windows enumera processos com sessões de áudio e usa PID + instante de criação
-como identidade; captura árvores de processos autorizadas pela API WASAPI.
-Reinícios precisam de nova seleção. Remoção de seleção fecha a captura e descarta
-fila local; áudio já em trânsito pode ser ouvido pela duração do buffer de reprodução.
+O transmissor confirma com `share-confirm {revision}` quando a captura estiver
+pronta. O servidor publica `sharing: true` e cria um par para cada receptor
+aprovado e conectado. A confirmação é idempotente. `share-release {revision}`,
+expiração da reserva, remoção ou queda do transmissor liberam a vez, incrementam
+a revisão e descartam todos os pares. Pedidos de outra pessoa ou de uma revisão
+anterior são recusados. Reconectar não retoma captura automaticamente.
 
-## Dados temporários
+Uma entrada/aprovação durante transmissão cria somente o novo par. Retomar o
+administrador enquanto um convidado transmite recria o par dele com nova sessão
+e desafio, preservando os outros receptores. Mudanças de monitor/qualidade mantêm
+a vez e renegociam a mídia; cancelamento da captura inicial libera a reserva.
 
-Servidor: salas, hashes, desafios, conexões, aprovação e contadores em memória.
-SDP autenticado não é cifrado no canal de sinalização além do TLS: o servidor pode
-ver IPs dos candidatos. TURN vê endpoints e volume de tráfego, sem decifrar a mídia.
-Salas expiram 60 segundos após queda do host. Rate limit guarda IPs por até 60s.
+## Canal autenticado e mídia
 
-Cliente: parâmetros na memória; cache técnico de plugins GStreamer local.
-Diagnóstico exportado manualmente inclui métricas e capacidades, sem convite,
-segredos, IPs, nomes de aplicativos, SDP ou credenciais TURN. Não há envio automático.
+`ready` identifica o peer remoto, `session`, seu desafio, perfil, capacidades e
+`revision`. O transmissor conecta diretamente a cada receptor, inclusive ao
+criador quando este assiste. O computador do criador não encaminha mídia.
 
+`signal {peer, revision, payload, mac}` usa o ID de destino. O serviço só
+encaminha pares ativos transmissor–receptor da revisão atual; a mensagem recebida
+identifica o ID de origem em `peer`. O payload é JSON compacto em Base64 com
+HMAC-SHA256. A chave é derivada do segredo do convite com domínio
+`lazarus-share/signaling/v2`.
 
-## Extensões aditivas da 0.2.0
+O envelope assinado contém `session`, `sender`, `recipient`, `revision`, desafio
+do destinatário, sequência crescente e `body`. O destinatário valida todos esses
+campos, HMAC e proteção de replay antes de aplicar SDP, ICE ou controles. Callbacks
+locais também validam sessão, revisão e geração, impedindo que uma conexão antiga
+altere a transmissão nova. Todos que conhecem o convite compartilham a chave;
+não há autenticação independente contra um participante malicioso com o token.
 
-`create`/`resume`/`join` podem conter `profile: {nickname, avatar}` e a lista
-`capabilities` (`profile`, `sharing`, `turn-endpoints`). `waiting` e `ready`
-repassam o perfil e capacidades do outro participante. Perfil permanece somente
-na RAM do serviço. Nickname é normalizado NFC, no máximo 10 grafemas/80 unidades
-Unicode no cliente, sem controles; avatar é inteiro de 0 a 9. Nomes não são identidades
-verificadas. Após aprovação, `profile` também circula no body autenticado.
+O transmissor coordena `restart {generation, relay, transport}`: -1 para P2P e
+0/1/2 para TURN UDP/TCP/TLS. `retry-request` solicita nova tentativa;
+`connection-failure` informa falha do receptor e `connection-terminal` informa
+esgotamento das tentativas ao receptor. Perfil e `relay-consent {enabled}` também
+são autenticados. O antigo body `sharing` foi substituído pelo estado revisionado.
 
-Sala não implica captura. Body `sharing {enabled}` informa transmissão/pausa.
-`restart {generation, relay, transport}` inicia nova tentativa; transport -1 indica
-P2P e 0/1/2 correspondem a UDP/TCP/TLS. Somente o host coordena reinícios.
-`relay-consent {enabled}` transmite a preferência local autenticada. Consentimento
-persistido é reaplicado à nova sessão, mas o servidor só recebe os pedidos `relay`
-após o body `relay-request` coordenado pelo host em falha direta ou renovação. Sem dupla autorização,
-não se configura TURN. `retry-request` solicita nova tentativa ao host.
+Cada par usa `webrtcbin`, H.264 por hardware ou VP8 por CPU, Opus e DTLS-SRTP.
+Captura ocorre uma vez; codificação e bitrate são adaptados por receptor.
+Queues limitadas impedem crescimento indefinido de memória/latência.
 
-Resposta `turn` acrescenta `endpoints` (URLs sem credenciais), além de host,
-username, password e expires. Credenciais expiram em uma hora; reemissão exige
-participante aprovado, duas permissões e intervalo mínimo de 30 segundos.
-Clientes renovam cinco minutos antes da expiração e reaproveitam credenciais ainda
-válidas ao retomar uma transmissão na mesma sala. Desabilitar a preferência encerra
-imediatamente a rota relay e revoga o consentimento no servidor.
+## Relay e recuperação
 
-Clientes 0.1.4 continuam com o comportamento antigo, sem nickname e pausa visual.
-Atualizar todos os participantes é recomendado. Criptografia e envelope v1 não mudam.
+A tentativa inicial usa somente P2P/STUN. TURN exige aprovação de entrada e
+consentimento dos dois integrantes do par, tanto no canal autenticado quanto
+em `relay {peer, revision, enabled}` para o servidor. O consentimento do criador
+não substitui o de um receptor ou transmissor convidado.
 
-### Recuperação de mídia — 0.2.1
+O transmissor usa `relay-request` após falha direta ou para renovar credenciais.
+`turn` identifica peer, revisão, endpoints, host, username, password e expires.
+Credenciais duram uma hora; emissão por par é limitada a uma vez a cada 30 segundos.
+Trocar transmissor descarta pares, consentimentos e credenciais daquela transmissão.
 
-O controle autenticado `restart` aceita `reason` opcional (`encoder_fallback`).
-O host incrementa a geração somente para o viewer afetado, mantém `transport`
-e o consentimento de relay e renegocia SDP/codec. Mensagens e callbacks de gerações
-anteriores são descartados. O viewer 0.2.0 ignora o motivo opcional e recebe a
-negociação normalmente; atualizar ambos continua recomendado.
+Renovação começa cinco minutos antes da expiração, sem reiniciar mídia ativa.
+O prazo é 15 segundos; repetição após falha em 30, 60, 120 e depois 300 segundos.
+Respostas antigas, duplicadas, expiradas ou de outra revisão são ignoradas.
+Revogar consentimento encerra o relay e cancela operações pendentes.
 
-Erros locais são classificados como `encoder_start`, `encoder_error`,
-`encoder_stall`, `software_unavailable`, `decoder_error` ou `media_pipeline`;
-falhas ICE/DTLS seguem no fluxo de transporte. Um erro de encoder permite uma
-única recuperação por software por conexão/configuração; falha posterior aguarda
-nova tentativa manual. `encoder_stall` indica ausência de saída, não prova defeito
-no hardware. Criar/reconectar uma sala parada não inicia captura.
+Falha do encoder permite uma tentativa por software, mantendo o transporte e
+incrementando a geração somente do receptor afetado. Falha do decoder H.264
+permite uma tentativa por software; ausência de resposta por 15 segundos termina
+a recuperação. Falhas posteriores exigem nova tentativa manual. Falha do áudio
+encerra somente a reprodução de áudio e preserva vídeo/transporte.
 
-### Renovação TURN — 0.2.2
+## Viewer, áudio e dados locais
 
-Renovação é uma solicitação independente, sem mudar geração, codec, encoder,
-rota ou `Peer`. O host usa as mensagens existentes `relay-request`/`relay`, e a
-sinalização continua entregando `turn` a ambos. As novas credenciais ficam em
-cache para futuras alocações; a alocação ativa mantém seu usuário original e
-libnice renova sua duração. Não se adicionam servidores ao ICE em execução.
+O viewer oferece ajuste proporcional, 100% com rolagem e tela cheia (F11/Esc).
+Volume de 0–100% e mute são aplicados depois da decodificação no pipeline local,
+nunca alterando captura, envio ou áudio dos demais receptores. A preferência
+permanece durante reconexões e trocas de transmissor no aplicativo aberto.
 
-Prazo de resposta: 15 segundos. Repetições após falha: 30, 60, 120 e depois
-300 segundos, com somente uma solicitação pendente por viewer. Erros de emissão
-não esgotam a conexão de mídia ativa. O timestamp TURN REST do username impede
-respostas antigas/duplicadas de prolongar validade; a validade é limitada por
-`expires` e pela expiração absoluta, usando relógio local correto. A sinalização
-não mudou; sua limitação de 30 segundos entre emissões continua aplicada.
+O estado “Ao vivo” só aparece após vídeo recebido. Após cinco segundos sem um
+novo quadro, o viewer mantém a última imagem com aviso visível e contador, sem
+reiniciar transporte ou parar áudio funcional. Quadros idênticos recebidos
+continuamente não geram aviso. Parada/troca de transmissão limpa a imagem e o aviso.
 
-Uma recuperação real só inicia nova alocação com credenciais válidas. Parar ou
-revogar consentimento cancela solicitações e negociações pendentes; respostas
-posteriores não iniciam mídia. Atualizar o host é necessário para evitar o
-reinício antigo; atualizar os dois participantes cobre ambos os sentidos.
+Captura de áudio continua restrita aos aplicativos explicitamente selecionados,
+sem microfone nem saída global. Linux identifica streams por serial PipeWire;
+Windows por PID e instante de criação. Reinício exige nova seleção.
 
-Eventos locais permitidos: `turn_renewal_requested`, `turn_renewal_completed`,
-`turn_renewal_failed` e `turn_renewal_retry`; sem credenciais, IPs ou SDP.
+Servidor: salas, hashes, perfis, desafios, pares, revisões e contadores em RAM.
+Rate limit mantém IPs por no máximo um minuto. SDP autenticado não é cifrado além
+do TLS: sinalização pode ver IPs candidatos; TURN vê endpoints e tráfego, sem
+ler a mídia. O diagnóstico permanece local e é exportado manualmente, sem convite,
+segredos, IPs, aplicativos, SDP ou credenciais. Não há gravação nem telemetria.

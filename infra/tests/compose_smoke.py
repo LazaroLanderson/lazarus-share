@@ -20,9 +20,9 @@ async def main():
             assert response.status == 200
             assert 'lazarus-share://join#' in await response.text()
         async with client.ws_connect('wss://127.0.0.1/ws', ssl=tls) as ws:
-            await ws.send_json({'type': 'create', 'room': 'a' * 64, 'admin': 'b' * 64, 'challenge': 'c' * 32})
+            await ws.send_json({'type': 'create', 'protocol': 2, 'room': 'a' * 64, 'admin': 'b' * 64, 'challenge': 'c' * 32})
             result = await asyncio.wait_for(ws.receive_json(), 5)
-            assert result['type'] == 'created'
+            assert result['type'] == 'created' and result['protocol'] == 2
     print('Compose HTTPS health and WebSocket room creation passed')
     subprocess.run([sys.executable, 'infra/stun_probe.py', '--host', '127.0.0.1'], check=True)
 

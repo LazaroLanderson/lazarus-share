@@ -1,6 +1,6 @@
 #pragma once
 #include "audio.h"
-#include "videoview.h"
+#include "viewerpanel.h"
 #include "capture.h"
 #include "protocol.h"
 #include "profile.h"
@@ -39,7 +39,7 @@ private:
         int avatar = 0, transport = -1, reconnectAttempts = 0;
         qint64 turnExpiry = 0, turnEpoch = 0;
         TurnRenewal renewal;
-        bool fatalMedia = false, exhausted = false, relayRequested = false, everConnected = false, modern = false;
+        bool fatalMedia = false, exhausted = false, relayRequested = false, everConnected = false;
         int generation = 1, retries = 0;
         bool software=false, selecting=false;
         bool decoderSoftware=false,decoderRecovering=false,audioUnavailable=false;
@@ -56,6 +56,9 @@ private:
     void setupUpdates(QVBoxLayout *layout);
     void editIdentity();
     void updateIdentity();
+    bool sender() const { return !participantId_.isEmpty() && broadcaster_ == participantId_; }
+    void updatePresentation();
+    void roomState(const QJsonObject &message);
     void share();
     void stopSharing();
     void restart(const QString &id, int transport);
@@ -96,15 +99,19 @@ private:
     QPushButton *create_, *join_, *stop_, *approve_, *remove_, *relay_;
     QLabel *status_, *metrics_, *audioStatus_;
     VideoView *video_;
+    ViewerPanel *viewerPanel_;
+    QString participantId_, broadcaster_, viewerState_ = "Aguardando compartilhamento";
+    qint64 revision_ = 0;
+    bool admitted_ = false, shareRequested_ = false, ownerOnline_ = true;
     QWebSocket socket_;
     Capture capture_;
     Audio audio_;
     QTimer frameTimer_, maintenance_;
     QElapsedTimer time_;
     bool sharing_ = false, capturePending_ = false;
-    bool active_ = false, host_ = false, created_ = false, refreshingAudio_ = false, testPattern_ = false;
+    bool active_ = false, administrator_ = false, created_ = false, refreshingAudio_ = false, testPattern_ = false;
     QByteArray secret_;
-    QString room_, admin_, challenge_, viewerId_;
+    QString room_, admin_, challenge_;
     int reconnects_ = 0, frames_ = 0;
     qint64 socketLost_ = -1, lastFrameTime_ = 0;
     std::map<QString, std::unique_ptr<Connection>> peers_;

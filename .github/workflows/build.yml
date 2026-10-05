@@ -21,6 +21,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
       - run: xvfb-run -a env QT_QPA_PLATFORM=xcb build/media-modules-test --require-gl
+      - run: xvfb-run -a env QT_QPA_PLATFORM=xcb build/viewer-test --require-gl
       - run: python3 server/tests/relay_local.py
       - name: Verify TURN credential expiry with pinned production Coturn
         run: |
@@ -38,6 +39,7 @@ jobs:
       - run: |
           .venv/bin/python server/tests/session_local.py --four-viewers
           .venv/bin/python server/tests/session_local.py --four-viewers --auto-admission
+          .venv/bin/python server/tests/session_local.py --four-viewers --guest-broadcast --owner-reconnect
           .venv/bin/python server/tests/session_local.py --invite-controls
           .venv/bin/python server/tests/session_local.py --four-viewers --encoder-fallback
           .venv/bin/python server/tests/session_local.py --decoder-fallback
@@ -80,7 +82,7 @@ jobs:
             mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad
             mingw-w64-x86_64-libnice mingw-w64-x86_64-python mingw-w64-x86_64-openssl
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
-      - run: ctest --test-dir build -R "activation|protocol|profile|update|media-modules|media-encoder-creation" --output-on-failure
+      - run: ctest --test-dir build -R "activation|protocol|profile|update|viewer|media-modules|media-encoder-creation" --output-on-failure
         env:
           QT_QPA_PLATFORM: offscreen
       - run: python packaging/windows/test_tls.py

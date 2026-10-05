@@ -42,12 +42,47 @@ struct UpdateTestAccess {
     }
 };
 struct WindowTestAccess {
+    static Window::Connection &connection(Window &w) {
+        for(auto &[id,c]:w.peers_)if(!c->session.isEmpty())return *c;
+        return *w.peers_.begin()->second;
+    }
+    static bool roomControls(Window &w) {
+        w.active_=true; w.administrator_=false; w.secret_=Protocol::randomBytes(16); w.challenge_="b"+QString(31,'b');
+        auto stateLabel=w.findChild<QLabel *>("viewerState");
+        w.message({{"type","joined"},{"protocol",2},{"peer","me"},{"requireApproval",true}});
+        if(stateLabel->text()!="Aguardando aprovação" || w.share_->isEnabled())return false;
+        QJsonArray roster{QJsonObject{{"peer","alice"},{"approved",true},{"profile",QJsonObject{{"nickname","Alice"},{"avatar",3}}}},
+                          QJsonObject{{"peer","me"},{"approved",true},{"profile",w.profile_.json()}}};
+        w.roomState({{"revision",0},{"broadcaster",""},{"participants",roster}});
+        if(stateLabel->text()!="Aguardando compartilhamento" || !w.share_->isEnabled())return false;
+        w.roomState({{"revision",1},{"broadcaster","alice"},{"participants",roster}});
+        if(stateLabel->text()!="Conectando" || w.share_->isEnabled() || w.sharing_)return false;
+        w.message({{"type","ready"},{"protocol",2},{"peer","alice"},{"revision",1},{"session",QString(32,'s')},{"challenge",QString(32,'a')}});
+        w.viewerState_="Ao vivo";w.updatePresentation();
+        Protocol::Channel remote(w.secret_,QString(32,'s'),"alice","me",QString(32,'a'),w.challenge_,1);
+        auto profile=remote.seal({{"kind","profile"},{"profile",QJsonObject{{"nickname","Bob"},{"avatar",4}}}});
+        profile["peer"]="alice";w.message(profile);
+        if(stateLabel->text()!="Ao vivo" || !w.findChild<QLabel *>("transmitter")->text().contains("Bob"))return false;
+        QImage frame(640,360,QImage::Format_RGB32);frame.fill(Qt::blue);w.viewerPanel_->setFrame(frame);w.viewerPanel_->frameAt(0);
+        w.viewerPanel_->updateFreeze(5000);if(stateLabel->text()!="Imagem congelada")return false;
+        auto terminal=remote.seal({{"kind","connection-terminal"},{"generation",1}});terminal["peer"]="alice";w.message(terminal);
+        if(stateLabel->text()!="Falha" || w.video_->hasFrame())return false;
+        w.socketLost_=0;w.updatePresentation();if(stateLabel->text()!="Reconectando")return false;w.socketLost_=-1;
+        w.roomState({{"revision",2},{"broadcaster",""},{"participants",roster}});
+        if(w.video_->hasFrame() || stateLabel->text()!="Aguardando compartilhamento")return false;
+        w.message({{"type","created"}});
+        return !w.active_ && stateLabel->text()=="Falha" && w.status_->text().contains("Servidor incompatível");
+    }
     static void updateRoom(Window &window, const QString &link) { window.active_ = true; window.secret_ = Protocol::inviteSecret(link); }
     static bool inRoom(Window &w, const QString &link) { return w.active_ && w.secret_ == Protocol::inviteSecret(link); }
-    struct Snapshot {QString id;int generation,transport;Peer *media;QString encoder;};
-    static std::vector<Snapshot> snapshots(Window &w){std::vector<Snapshot> result;for(auto &[id,c]:w.peers_)result.push_back({id,c->generation,c->transport,c->media.get(),c->media?c->media->encoderName():QString{}});return result;}
+    struct Snapshot {QString id;int generation,transport;Peer *media;QString encoder,session;};
+    static std::vector<Snapshot> snapshots(Window &w){std::vector<Snapshot> result;for(auto &[id,c]:w.peers_)if(!c->session.isEmpty())result.push_back({id,c->generation,c->transport,c->media.get(),c->media?c->media->encoderName():QString{},c->session});return result;}
+    static void disconnectOwner(Window &w){w.socket_.close();}
+    static bool resumedSession(Window &w,const Snapshot &before){
+        auto saved=snapshots(w);return saved.size()==1 && saved[0].session!=before.session && saved[0].media && saved[0].media->connected() && w.video_->hasFrame() && !w.sharing_;
+    }
     static void fail(Window &w,const Snapshot &s){auto &c=*w.peers_.at(s.id);c.software=false;PeerTestAccess::failEncoder(*c.media);}
-    static bool failReceiver(Window &w,bool audio){return PeerTestAccess::failReceiver(*w.peers_.begin()->second->media,audio);}
+    static bool failReceiver(Window &w,bool audio){return PeerTestAccess::failReceiver(*connection(w).media,audio);}
     static bool receiverRecovered(Window &w,const Snapshot &s){
         auto &c=*w.peers_.at(s.id);
         if(c.generation!=s.generation+1 || c.transport!=s.transport || !c.media || !c.media->connected() || c.fatalMedia || !c.decoderSoftware || !c.media->softwareDecoder() || c.media->takeFrame().isNull())return false;
@@ -59,15 +94,15 @@ struct WindowTestAccess {
         w.mediaFailure(s.id,s.generation,"decoder_error");if(c.generation!=generation || !c.media)return false;
         return failReceiver(w,false) && failReceiver(w,false);
     }
-    static bool receiverStopped(Window &w){auto &c=*w.peers_.begin()->second;return c.fatalMedia && !c.media && !c.relayRequested && !c.decoderRecovering;}
-    static bool receiverRunning(Window &w){auto &c=*w.peers_.begin()->second;return c.media && c.media->connected() && !c.fatalMedia && !c.decoderRecovering && !c.media->takeFrame().isNull();}
+    static bool receiverStopped(Window &w){auto &c=connection(w);return c.fatalMedia && !c.media && !c.relayRequested && !c.decoderRecovering;}
+    static bool receiverRunning(Window &w){auto &c=connection(w);return c.media && c.media->connected() && !c.fatalMedia && !c.decoderRecovering && !c.media->takeFrame().isNull();}
     static bool decoderTimeout(Window &w){
-        w.active_=true;w.host_=false;auto c=std::make_unique<Window::Connection>();c->decoderRecovering=c->decoderSoftware=true;c->started=w.time_.elapsed()-16000;w.peers_["timeout"]=std::move(c);
+        w.active_=true;w.administrator_=false;auto c=std::make_unique<Window::Connection>();c->decoderRecovering=c->decoderSoftware=true;c->started=w.time_.elapsed()-16000;w.peers_["timeout"]=std::move(c);
         QMetaObject::invokeMethod(&w.maintenance_,"timeout",Qt::DirectConnection);
         return receiverStopped(w) && w.peers_.at("timeout")->metrics["error_code"]=="decoder_retry_timeout";
     }
     static bool audioWarning(Window &w){return w.audioStatus_->text().contains("Áudio indisponível");}
-    static void staleRetry(Window &w,int generation){w.signal(w.peers_.begin()->first,{{"kind","retry-request"},{"reason","decoder_fallback"},{"generation",generation}});}
+    static void staleRetry(Window &w,int generation){w.signal(w.broadcaster_,{{"kind","retry-request"},{"reason","decoder_fallback"},{"generation",generation}});}
     static void errors(Window &w){for(auto value:w.log_.events()){auto e=value.toObject();if(e["event"].toString()=="media_failure_detail")std::cerr<<"Receiver detail: "<<e["error_code"].toString().toStdString()<<' '<<e["component"].toString().toStdString()<<' '<<e["factory"].toString().toStdString()<<'\n';}}
     static bool recovered(Window &w,const std::vector<Snapshot> &saved){
         for(size_t i=0;i<saved.size();++i){auto &before=saved[i];auto &c=*w.peers_.at(before.id);
@@ -87,10 +122,10 @@ struct WindowTestAccess {
     static bool lateAndFailure(Window &w,const std::vector<Snapshot> &saved){
         for(auto &before:saved){auto &c=*w.peers_.at(before.id);auto expiry=c.turnExpiry;auto epoch=c.turnEpoch;
             c.renewal.requested(w.time_.elapsed());
-            w.message({{"type","error"},{"peer",before.id},{"code","turn_unavailable"}});
+            w.message({{"type","error"},{"revision",w.revision_},{"peer",before.id},{"code","turn_unavailable"}});
             if(c.renewal.pending || c.renewal.failures!=1 || c.media.get()!=before.media || c.exhausted)return false;
             // A duplicate credential response must neither extend validity nor reset retry state.
-            w.message({{"type","turn"},{"peer",before.id},{"host","127.0.0.1"},{"username",QString::number(epoch)+":duplicate"},{"password","test-only"},{"expires",3600}});
+            w.message({{"type","turn"},{"revision",w.revision_},{"peer",before.id},{"host","127.0.0.1"},{"username",QString::number(epoch)+":duplicate"},{"password","test-only"},{"expires",3600}});
             if(c.turnExpiry!=expiry || c.media.get()!=before.media || c.renewal.failures!=1)return false;
             c.renewal.cancel();c.renewal.requested(w.time_.elapsed()-15000);
             QMetaObject::invokeMethod(&w.maintenance_,"timeout",Qt::DirectConnection);
@@ -116,16 +151,16 @@ struct WindowTestAccess {
     static bool revokedReply(Window &host,const QString &id){
         auto &c=*host.peers_.at(id);if(c.remoteConsent || c.media || c.renewal.pending || c.relayRequested || c.pendingRestart)return false;
         auto epoch=c.turnEpoch;
-        host.message({{"type","turn"},{"peer",id},{"host","127.0.0.1"},{"username",QString::number(epoch+100)+":revoked"},{"password","test-only"},{"expires",3600}});
+        host.message({{"type","turn"},{"revision",host.revision_},{"peer",id},{"host","127.0.0.1"},{"username",QString::number(epoch+100)+":revoked"},{"password","test-only"},{"expires",3600}});
         return !c.media && c.turnEpoch==epoch && c.turns.isEmpty();
     }
     static void beginRenewal(Window &w){for(auto &[id,c]:w.peers_)c->renewal.requested(w.time_.elapsed());}
-    static std::shared_ptr<std::atomic<unsigned>> watchFrames(Window &w){return PeerTestAccess::watchFrames(*w.peers_.begin()->second->media);}
+    static std::shared_ptr<std::atomic<unsigned>> watchFrames(Window &w){return PeerTestAccess::watchFrames(*connection(w).media);}
     static bool unchanged(Window &w,const std::vector<Snapshot> &saved){for(auto &s:saved){auto &c=*w.peers_.at(s.id);if(c.media.get()!=s.media || c.generation!=s.generation || c.transport!=s.transport)return false;}return true;}
     static bool pausedReply(Window &w){
         for(auto &[id,c]:w.peers_){
             auto generation=c->generation;auto turns=c->turns;auto expiry=c->turnExpiry;auto epoch=c->turnEpoch;
-            w.message({{"type","turn"},{"peer",id},{"host","127.0.0.1"},{"username",QString::number(c->turnEpoch+100)+":late-paused"},{"password","test-only"},{"expires",3600}});
+            w.message({{"type","turn"},{"revision",w.revision_},{"peer",id},{"host","127.0.0.1"},{"username",QString::number(c->turnEpoch+100)+":late-paused"},{"password","test-only"},{"expires",3600}});
             if(c->media || c->generation!=generation || c->renewal.pending || c->relayRequested)return false;
             c->turns=turns;c->turnExpiry=expiry;c->turnEpoch=epoch;
         }return true;
@@ -139,11 +174,13 @@ static QPushButton *button(Window &w, const QString &text) {
     return nullptr;
 }
 static void share(Window &window, int preset = 0) {
-    QTimer::singleShot(0, &window, [preset] {
+    auto *dialogTimer = new QTimer(&window); dialogTimer->setInterval(10);
+    QObject::connect(dialogTimer,&QTimer::timeout,&window,[preset,dialogTimer]{
         auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
         if (!dialog) return;
-        auto combos = dialog->findChildren<QComboBox *>(); combos.last()->setCurrentIndex(preset); dialog->accept();
-    });
+        auto combos = dialog->findChildren<QComboBox *>(); combos.last()->setCurrentIndex(preset);
+        dialogTimer->stop(); dialogTimer->deleteLater(); dialog->accept();
+    }); dialogTimer->start();
     auto *start=button(window,"Compartilhar tela");
     (start->isEnabled()?start:button(window,"Monitor / qualidade"))->click();
 }
@@ -159,6 +196,7 @@ int main(int argc, char **argv) {
     if(decoderRecovery)qputenv("LAZARUS_TEST_H264","1");
     for(auto argument:app.arguments())if(argument.startsWith("--relay-transport="))transport=argument.section('=',1).toInt();
     Profile{"José",3,true}.save(); Window host; host.show();
+    if(app.arguments().contains("--room-controls")){if(!WindowTestAccess::roomControls(host))return 1;std::cout<<"Room states, identity, freeze, revision change and server incompatibility passed\n";return 0;}
     if(app.arguments().contains("--decoder-timeout")){if(!WindowTestAccess::decoderTimeout(host))return 1;std::cout<<"Unanswered decoder recovery terminates after timeout\n";return 0;}
     if (app.arguments().contains("--update-controls")) {
         const auto link = Protocol::inviteLink(Protocol::randomBytes(16));
@@ -216,10 +254,13 @@ int main(int argc, char **argv) {
         host.findChild<QCheckBox *>("requireApproval")->setChecked(true); button(host,"Criar sala")->click(); int result=1;
         QTimer::singleShot(3000,&app,[&] { result=host.findChild<QLabel *>("status")->text().startsWith("Sala criada")?1:0; app.quit(); }); app.exec(); return result;
     }
+    const bool ownerReconnect=app.arguments().contains("--owner-reconnect");
+    const bool guestBroadcast=app.arguments().contains("--guest-broadcast");
     const bool autoAdmission=app.arguments().contains("--auto-admission");
     const int count=app.arguments().contains("--four-viewers")?4:1;
     std::vector<std::unique_ptr<Window>> guests;
     for(int i=0;i<count;++i) { Profile{QString("Viewer%1").arg(i),i,automatic}.save(); guests.push_back(std::make_unique<Window>()); guests.back()->show(); }
+    if(guestBroadcast)guests[0]->findChild<QCheckBox *>("testPattern")->setChecked(true);
     if(automatic || denial) { WindowTestAccess::block(host,transport-1); for(auto &g:guests)WindowTestAccess::block(*g,transport-1); }
     host.findChild<QCheckBox *>("testPattern")->setChecked(true); host.findChild<QCheckBox *>("requireApproval")->setChecked(!autoAdmission); button(host,"Criar sala")->click();
     QTimer timer; QElapsedTimer elapsed; elapsed.start(); timer.setInterval(20); int stage=0; qint64 approvedAt=0,renewalAt=0; bool passed=false;std::vector<WindowTestAccess::Snapshot> saved;
@@ -243,8 +284,12 @@ int main(int argc, char **argv) {
             if(button(host,"Parar compartilhamento")->isEnabled()) { app.quit(); return; }
             auto token=host.findChild<QLineEdit *>("invite")->text();
             for(auto &g:guests) { g->openInvite(token); } ++stage;
-        } else if(stage==1 && host.findChild<QListWidget *>("viewers")->count()==count) {
-            if (!autoAdmission) for(int i=0;i<count;++i) { host.findChild<QListWidget *>("viewers")->setCurrentRow(i); button(host,"Aprovar")->click(); }
+        } else if(stage==1 && host.findChild<QListWidget *>("viewers")->count()==count+1) {
+            if (!autoAdmission) for(int i=0;i<count+1;++i) {
+                auto *list=host.findChild<QListWidget *>("viewers");
+                if(list->item(i)->text().contains("Você"))continue;
+                list->setCurrentRow(i); button(host,"Aprovar")->click();
+            }
             approvedAt=elapsed.elapsed(); ++stage;
         } else if(stage==2 && elapsed.elapsed()-approvedAt>500) {
             if(std::any_of(guests.begin(),guests.end(),[](auto &g) { return !g->template findChild<QLabel *>("video")->pixmap().isNull(); })) { std::cerr<<"Room captured without consent\n"; app.quit(); return; }
@@ -302,9 +347,20 @@ int main(int argc, char **argv) {
         } else if(stage==4 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return g->template findChild<QLabel *>("video")->pixmap().isNull(); })) {
             if(app.arguments().contains("--turn-renewal") && !WindowTestAccess::pausedReply(host)){std::cerr<<"Late reply restarted paused media\n";app.quit();return;}
             if(Protocol::inviteSecret(host.findChild<QLineEdit *>("invite")->text()).isEmpty() || button(host,"Criar sala")->isEnabled()) { app.quit(); return; }
-            share(host,1); ++stage;
-        } else if(stage==5 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return g->template findChild<QLabel *>("metrics")->text().contains("1920×1080"); })) {
-            button(host,"Encerrar / sair")->click(); ++stage;
+            share(guestBroadcast?*guests[0]:host,1); ++stage;
+        } else if(stage==5 && (guestBroadcast
+                   ? host.findChild<QLabel *>("metrics")->text().contains("1920×1080") && std::all_of(guests.begin()+1,guests.end(),[](auto &g){return g->template findChild<QLabel *>("metrics")->text().contains("1920×1080");})
+                   : std::all_of(guests.begin(),guests.end(),[](auto &g) { return g->template findChild<QLabel *>("metrics")->text().contains("1920×1080"); }))) {
+            if(guestBroadcast)std::cout<<"Guest broadcasts directly to creator and other participants\n";
+            if(ownerReconnect) {
+                saved=WindowTestAccess::snapshots(host); guestSaved.clear();
+                for(auto &g:guests)guestSaved.push_back(WindowTestAccess::snapshots(*g));
+                WindowTestAccess::disconnectOwner(host);stage=30;
+            } else {button(host,"Encerrar / sair")->click();++stage;}
+        } else if(stage==30 && WindowTestAccess::resumedSession(host,saved[0])) {
+            for(int i=1;i<count;++i)if(!WindowTestAccess::unchanged(*guests[i],guestSaved[i])){std::cerr<<"Owner resume restarted another receiver\n";app.quit();return;}
+            std::cout<<"Creator resumed with a fresh receive session; other receivers continued\n";
+            button(host,"Encerrar / sair")->click();stage=6;
         } else if(stage==6 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return button(*g,"Entrar com link")->isEnabled(); })) { passed=true; app.quit(); }
     }); timer.start(); app.exec();
     if(passed) std::cout<<count<<" viewer(s): approved idle room, explicit share, pause, resume and teardown passed\n";

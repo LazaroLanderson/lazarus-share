@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
     gst_init(&argc, &argv);
     if (argc > 1 && QString::fromLocal8Bit(argv[1]) == "--check-runtime") {
         bool ok = true;
-        for (const char *name : {"queue", "capsfilter", "appsrc", "appsink", "webrtcbin", "nicesrc", "dtlssrtpenc", "srtpenc", "rtpvp8pay", "vp8enc", "opusenc", "videoconvert", "audiomixer", "h264parse", "openh264dec", "decodebin", "rtph264pay", "rtph264depay"}) {
+        for (const char *name : {"queue", "capsfilter", "appsrc", "appsink", "webrtcbin", "nicesrc", "dtlssrtpenc", "srtpenc", "rtpvp8pay", "vp8enc", "opusenc", "videoconvert", "volume", "audiomixer", "h264parse", "openh264dec", "decodebin", "rtph264pay", "rtph264depay"}) {
             auto *factory = gst_element_factory_find(name);
             if (factory) gst_object_unref(factory);
             else { std::cerr << "Missing runtime element: " << name << '\n'; ok = false; }

@@ -3,7 +3,7 @@
 | Cenário | Critério |
 |---|---|
 | Autenticação | Alteração de payload, chave errada e replay são rejeitados |
-| Salas | Entrada automática por padrão; aprovação opcional; quinto espectador recusado |
+| Salas | Entrada automática por padrão; aprovação opcional; cinco admitidos incluindo o criador |
 | Convites | Link HTTPS abre o app existente; troca de sala exige confirmação |
 | Privacidade | Sem TURN antes das duas autorizações; diagnóstico sem segredos |
 | WebRTC local | Vídeo VP8 sintético é decodificado por outro peer |
@@ -13,7 +13,10 @@
 | Windows 11 | Áudio autorizado é ouvido; som não autorizado não aparece |
 | Áudio Linux | Dois apps distintos: somente o marcado é recebido |
 | Revogação | Desmarcar/reiniciar/remove stream não reautoriza outro processo |
-| Quatro viewers | Todos veem; remover um encerra somente sua conexão |
+| Participantes | Criador e convidados transmitem; somente um compartilha por vez |
+| Viewer | Ajuste e 100% com rolagem; F11/Esc; volume/mute preservados |
+| Congelamento | Aviso após cinco segundos sem quadros; retorno remove aviso |
+| Troca de transmissor | Imagem, áudio e mensagens anteriores são descartados |
 | Qualidade | Ajustar tamanho/FPS/bitrate altera transmissão sem encerrar sala |
 | NAT restritivo | Falha direta oferece relay; recusa mantém mídia fora do servidor |
 | UDP bloqueado | TURN/TLS 443 conecta, quando permitido pela rede |
@@ -247,3 +250,35 @@ ambiente limpo e perfil temporário.
 Testes de captura e áudio entre computadores reais, outras GPUs, Windows 10/11
 e sessões longas em redes de operadora permanecem pendentes. A primeira instalação
 da 0.2.4 exige download manual; as próximas releases serão detectadas ao abrir.
+
+
+## Protocolo v2 e experiência da sala — 5 de outubro de 2026
+
+Resultados desta implementação local, ainda sem publicação ou deploy:
+
+- Os 28 testes CTest e os 14 testes do servidor passaram. Cobrem autenticação
+  por origem/destino/sessão/revisão, admissão, disputa pela transmissão,
+  cancelamento, expiração, remoção, desconexão e rejeição de mensagens antigas.
+- Sessão com quatro receptores passou com criador e convidado transmitindo.
+  Durante transmissão do convidado, o criador retomou a sinalização com uma
+  sessão de recepção nova; as sessões dos outros receptores continuaram.
+- Viewer passou nos renderizadores software (offscreen) e OpenGL (XCB), com
+  proporção, tamanho real, rolagem, F11/Esc, restauração da janela e preservação
+  dos pixels após recriação do contexto OpenGL. O teste cobre congelamento em
+  cinco segundos, retorno dos quadros e imagens idênticas recebidas continuamente.
+- Volume e mute passaram antes da criação da reprodução de áudio e durante
+  alterações no pipeline. Os estados foram verificados desde aprovação e
+  espera até vídeo recebido, recuperação e falha; perfil não sobrescreve o estado.
+- Recuperação de decoder/áudio e relay com consentimento passaram com Coturn
+  local via UDP, TCP e TLS. Renovação passou com quatro receptores, incluindo
+  erro, duplicação, timeout, revogação e pausa. O teste TLS local validou sessão
+  completa e rejeição de certificado substituído.
+- Aplicativo Linux compilado. Aplicativo e auxiliar de atualização Windows
+  compilados e ligados por crosscompilação; isso não valida execução Windows.
+  O workflow inclui a compilação e os testes nativos Windows, ainda não
+  executados para esta alteração.
+
+Permanecem pendentes: validação manual de tela cheia e áudio entre PCs reais,
+execução Windows 10/11, captura real nos dois sistemas, empacotamento desta
+alteração e testes em redes externas. Os testes locais usam mídia sintética;
+não comprovam latência, qualidade ou continuidade em redes de operadora.

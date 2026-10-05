@@ -10,6 +10,12 @@
 #include <numeric>
 #include <memory>
 struct PeerTestAccess {
+    static bool volumeMatches(Peer &peer,double expected,bool muted) {
+        QMutexLocker lock(&peer.receiveMutex_); if(!peer.audioPlayback_)return false;
+        auto *element=gst_bin_get_by_name(GST_BIN(peer.audioPlayback_),"received_volume"); if(!element)return false;
+        double value=0;gboolean mute=false;g_object_get(element,"volume",&value,"mute",&mute,nullptr);gst_object_unref(element);
+        return std::abs(value-expected)<.001 && bool(mute)==muted;
+    }
     static bool watchAudio(Peer &peer,std::atomic<unsigned> *frames){
         QMutexLocker receiveLock(&peer.receiveMutex_);
         if(!peer.audioPlayback_)return false;auto *convert=gst_bin_get_by_name(GST_BIN(peer.audioPlayback_),"audio_convert");if(!convert)return false;
@@ -78,9 +84,10 @@ int main(int argc, char **argv) {
     bool stress = app.arguments().contains("--stress-quality");
     std::atomic<quint64> encodedBytes{0},rtpBytes{0};std::atomic<unsigned> frameCounts[2]{};bool bytesReset=false;double byteStart=0;
     std::atomic<unsigned> decodedAudio{0};bool audioWatched=false;const bool audioPlayback=app.arguments().contains("--audio-playback");
-    Peer host(true), guest(false); Quality q = stress ? Quality{1920,1080,60,8000} : Quality{640,360,30,1200};
+    const bool volumeTest=app.arguments().contains("--audio-volume"); bool volumeVerified=false;
+    Peer host(true), guest(false); if(volumeTest)guest.playbackVolume(.35,true); Quality q = stress ? Quality{1920,1080,60,8000} : Quality{640,360,30,1200};
     auto key = Protocol::randomBytes(16);
-    Protocol::Channel h(key, "session", "peer", "host", "guest", true), g(key, "session", "peer", "guest", "host", false);
+    Protocol::Channel h(key, "session", "host-id", "guest-id", "host", "guest", 1), g(key, "session", "guest-id", "host-id", "guest", "host", 1);
     QObject::connect(&host, &Peer::outgoing, &guest, [&](QJsonObject message) { QJsonObject decoded; if (g.open(h.seal(message), decoded)) guest.receive(decoded); });
     QObject::connect(&guest, &Peer::outgoing, &host, [&](QJsonObject message) { QJsonObject decoded; if (h.open(g.seal(message), decoded)) host.receive(decoded); });
     bool failed = false; auto error = [&](QString e) { std::cerr << e.toStdString() << '\n'; failed = true; app.quit(); };
@@ -112,6 +119,12 @@ int main(int argc, char **argv) {
     QImage expected; int badFrames = 0; double maxError = 0;
     QTimer timer; timer.setInterval(8); int frames = 0;
     QObject::connect(&timer, &QTimer::timeout, &app, [&] {
+        if(volumeTest && !volumeVerified && frames>=15) {
+            if(!PeerTestAccess::volumeMatches(guest,.35,true)){failed=true;app.quit();return;}
+            guest.playbackVolume(.8,false);
+            if(!PeerTestAccess::volumeMatches(guest,.8,false)){failed=true;app.quit();return;}
+            volumeVerified=true;
+        }
         if(audioPlayback && !audioWatched)audioWatched=PeerTestAccess::watchAudio(guest,&decodedAudio);
         if (auto *sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink), 0)) { host.video(sample); gst_sample_unref(sample); }
         while (auto *sample = gst_app_sink_try_pull_sample(GST_APP_SINK(audio), 0)) { if (!app.arguments().contains("--video-only")) host.audio(sample); gst_sample_unref(sample); }
@@ -152,6 +165,7 @@ int main(int argc, char **argv) {
     gst_element_set_state(silence, GST_STATE_NULL); gst_object_unref(audio); gst_object_unref(silence);
     if(decoderFailure){if(failed || !decoderInjected || decoderFailures!=1 || transportFailures || !host.connected() || failureComponent!="video")return 1;std::cout<<"Decoder failure classified without transport recovery\n";return 0;}
     if(audioFailure && (!audioInjected || audioWarnings!=1 || audioFrames<90 || transportFailures || failureComponent!="audio"))return 1;
+    if(volumeTest && !volumeVerified)return 1;
     if(audioPlayback){if(!audioWatched || decodedAudio<30 || audioWarnings)return 1;std::cout<<"Independent audio playback decoded "<<decodedAudio<<" PCM buffers\n";}
     if(app.arguments().contains("--require-software-decoder")){
         auto *factory=gst_element_factory_find(decoder.toUtf8().constData());const char *klass=factory?gst_element_factory_get_metadata(factory,GST_ELEMENT_METADATA_KLASS):nullptr;

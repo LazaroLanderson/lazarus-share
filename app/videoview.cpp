@@ -9,7 +9,14 @@
 class TextureView : public QOpenGLWidget,protected QOpenGLFunctions {
 public:
     explicit TextureView(VideoView *owner):QOpenGLWidget(owner),owner_(owner){setAttribute(Qt::WA_TransparentForMouseEvents);}
-    ~TextureView(){if(context() && isValid()){makeCurrent();if(texture_)glDeleteTextures(1,&texture_);buffer_.destroy();program_.reset();doneCurrent();}}
+    ~TextureView(){ cleanup(); if(context())disconnect(context(),nullptr,this,nullptr); }
+    void cleanup() {
+        if(context() && isValid()) {
+            makeCurrent(); if(texture_)glDeleteTextures(1,&texture_);
+            buffer_.destroy(); program_.reset(); doneCurrent();
+        }
+        texture_=0; textureSize_={}; textureFormat_=0; ready_=false; dirty_=true;
+    }
     void frame(QImage image){
         // Qt's native RGB32 avoids another RGB24-to-pixmap conversion. GLES 2
         // has no portable BGRA upload, so convert once when a new frame arrives.
@@ -21,7 +28,10 @@ public:
     }
 protected:
     void initializeGL() override {
-        initializeOpenGLFunctions();program_=std::make_unique<QOpenGLShaderProgram>();
+        // Moving the viewer to/from a top-level fullscreen window recreates its
+        // context. Release old objects in that context and upload the frame again.
+        connect(context(),&QOpenGLContext::aboutToBeDestroyed,this,[this]{cleanup();},Qt::DirectConnection);
+        initializeOpenGLFunctions();dirty_=true;textureSize_={};textureFormat_=0;program_=std::make_unique<QOpenGLShaderProgram>();
         const char *vertex="attribute vec2 position; attribute vec2 uv; varying vec2 coord; void main(){coord=uv;gl_Position=vec4(position,0.,1.);}";
         QByteArray fragment=(context()->isOpenGLES()?"precision mediump float;":"")+QByteArray("varying vec2 coord; uniform sampler2D frame; void main(){gl_FragColor=vec4(texture2D(frame,coord).rgb,1.);}");
         ready_=program_->addShaderFromSourceCode(QOpenGLShader::Vertex,vertex) && program_->addShaderFromSourceCode(QOpenGLShader::Fragment,fragment) && program_->link() && buffer_.create();

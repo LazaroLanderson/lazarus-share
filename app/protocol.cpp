@@ -56,15 +56,18 @@ bool equal(const QByteArray &a, const QByteArray &b) {
     for (qsizetype i = 0; i < a.size(); ++i) difference |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
     return difference == 0;
 }
-Channel::Channel(QByteArray secret, QString session, QString peer, QString localChallenge, QString remoteChallenge, bool host)
-    : key_(QMessageAuthenticationCode::hash("lazarus-share/signaling/v1", secret, QCryptographicHash::Sha256)),
-      session_(std::move(session)), peer_(std::move(peer)), local_(std::move(localChallenge)), remote_(std::move(remoteChallenge)), host_(host) {}
+Channel::Channel(QByteArray secret, QString session, QString localId, QString remoteId,
+                 QString localChallenge, QString remoteChallenge, qint64 revision)
+    : key_(QMessageAuthenticationCode::hash("lazarus-share/signaling/v2", secret, QCryptographicHash::Sha256)),
+      session_(std::move(session)), local_(std::move(localChallenge)), remote_(std::move(remoteChallenge)),
+      localId_(std::move(localId)), remoteId_(std::move(remoteId)), revision_(revision) {}
 QJsonObject Channel::seal(const QJsonObject &body) {
-    QJsonObject envelope{{"session", session_}, {"peer", peer_}, {"challenge", remote_},
-                         {"sender", host_ ? "host" : "viewer"}, {"seq", ++sent_}, {"body", body}};
+    QJsonObject envelope{{"session", session_}, {"challenge", remote_},
+                         {"sender", localId_}, {"recipient", remoteId_}, {"revision", revision_},
+                         {"seq", ++sent_}, {"body", body}};
     QByteArray payload = QJsonDocument(envelope).toJson(QJsonDocument::Compact).toBase64();
     QByteArray mac = QMessageAuthenticationCode::hash(payload, key_, QCryptographicHash::Sha256).toHex();
-    return {{"type", "signal"}, {"peer", peer_}, {"payload", QString::fromLatin1(payload)}, {"mac", QString::fromLatin1(mac)}};
+    return {{"type", "signal"}, {"revision", revision_}, {"peer", remoteId_}, {"payload", QString::fromLatin1(payload)}, {"mac", QString::fromLatin1(mac)}};
 }
 bool Channel::open(const QJsonObject &wire, QJsonObject &body) {
     QByteArray payload = wire["payload"].toString().toLatin1();
@@ -73,8 +76,8 @@ bool Channel::open(const QJsonObject &wire, QJsonObject &body) {
     auto doc = QJsonDocument::fromJson(QByteArray::fromBase64(payload));
     if (!doc.isObject()) return false;
     auto e = doc.object(); qint64 seq = e["seq"].toInteger();
-    if (e["session"] != session_ || e["peer"] != peer_ || e["challenge"] != local_ ||
-        e["sender"].toString() != (host_ ? "viewer" : "host") || seq <= received_ || !e["body"].isObject()) return false;
+    if (e["session"] != session_ || e["challenge"] != local_ || seq <= received_ || !e["body"].isObject()) return false;
+    if (e["sender"] != remoteId_ || e["recipient"] != localId_ || e["revision"].toInteger() != revision_) return false;
     received_ = seq; body = e["body"].toObject(); return true;
 }
 }

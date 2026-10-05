@@ -10,9 +10,12 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import aiohttp
 
 async def receive(ws, expected):
-    message=await asyncio.wait_for(ws.receive_json(),10)
-    if message.get('type') != expected: raise RuntimeError('Unexpected signaling stage')
-    return message
+    async def read():
+        while True:
+            message=await ws.receive_json()
+            if message.get('type') == expected: return message
+            if message.get('type') != 'room-state': raise RuntimeError('Unexpected signaling stage')
+    return await asyncio.wait_for(read(),10)
 
 async def main(hostname, binary):
     room=hashlib.sha256(secrets.token_bytes(32)).hexdigest()
@@ -21,13 +24,18 @@ async def main(hostname, binary):
             if health.status != 200: raise RuntimeError('Public health failed')
         async with client.ws_connect('wss://'+hostname+'/ws') as host, client.ws_connect('wss://'+hostname+'/ws') as viewer:
             try:
-                await host.send_json({'type':'create','room':room,'admin':secrets.token_hex(32),'challenge':secrets.token_hex(16)})
-                await receive(host,'created')
-                await viewer.send_json({'type':'join','room':room,'challenge':secrets.token_hex(16)})
+                await host.send_json({'type':'create','protocol':2,'room':room,'admin':secrets.token_hex(32),'challenge':secrets.token_hex(16)})
+                created=await receive(host,'created')
+                await viewer.send_json({'type':'join','protocol':2,'room':room,'challenge':secrets.token_hex(16)})
                 joined=await receive(viewer,'joined');await receive(host,'waiting')
-                await host.send_json({'type':'approve','peer':joined['peer']});await receive(host,'ready');await receive(viewer,'ready')
-                await host.send_json({'type':'relay','peer':joined['peer'],'enabled':True})
-                await viewer.send_json({'type':'relay','enabled':True})
+                await host.send_json({'type':'approve','peer':joined['peer']})
+                await receive(host,'room-state');await receive(host,'room-state')
+                await host.send_json({'type':'share-request'})
+                reservation=await receive(host,'room-state')
+                await host.send_json({'type':'share-confirm','revision':reservation['revision']})
+                await receive(host,'ready');await receive(viewer,'ready')
+                await host.send_json({'type':'relay','peer':joined['peer'],'revision':reservation['revision'],'enabled':True})
+                await viewer.send_json({'type':'relay','peer':created['peer'],'revision':reservation['revision'],'enabled':True})
                 config=await receive(host,'turn');await receive(viewer,'turn')
                 endpoints=config.get('endpoints',[])
                 if len(endpoints)!=3: raise RuntimeError('TURN endpoints incomplete')

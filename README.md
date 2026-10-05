@@ -2,18 +2,22 @@
 
 **Compartilhamento de tela portátil, sem login, com conexão P2P e código aberto.**
 
-O host captura um monitor e transmite para até quatro espectadores, com entrada por link e aprovação opcional.
+Qualquer participante aprovado pode capturar um monitor e transmitir para os outros quatro participantes,
+com entrada por link, aprovação opcional e uma transmissão por vez. O criador administra a sala.
 O vídeo e o áudio seguem diretamente entre os computadores quando a rede permite.
 Na versão 0.2.0, o relay criptografado entra automaticamente após falha direta,
-quando host e viewer autorizaram essa possibilidade no perfil local.
+quando transmissor e receptor autorizaram essa possibilidade no perfil local.
 
 Sem contas, telemetria, anúncios, gravação ou histórico de salas no servidor.
 O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
-> **Versão 0.2.5, experimental.** O caminho Linux/Intel foi testado
+> **Versão 0.2.6, experimental.** O caminho Linux/Intel foi testado
 > localmente. O EXE Windows foi recompilado nativamente e passou no teste de
 > abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
+
+> **Protocolo v2:** servidor e todos os participantes precisam atualizar para
+> a 0.2.6. Clientes anteriores são incompatíveis. Atualize o servidor antes dos clientes.
 
 ## Atualizações dentro do aplicativo
 
@@ -43,11 +47,11 @@ implementação: a origem é autenticada pelo HTTPS do GitHub.
 
 | Plataforma | Executável portátil |
 | --- | --- |
-| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.5/LazarusShare-x86_64.AppImage) |
-| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.5/LazarusShare.exe) |
+| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.6/LazarusShare-x86_64.AppImage) |
+| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.6/LazarusShare.exe) |
 
-[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.5)
-· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.5/SHA256SUMS)
+[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.6)
+· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.6/SHA256SUMS)
 
 Para testar, abra o app, configure seu perfil local e crie uma sala ou entre com
 um convite. O servidor da VPS já vem configurado internamente. Baixe a versão atual manualmente
@@ -76,20 +80,21 @@ de testes em equipamentos reais.
 
 | Recurso | Comportamento |
 | --- | --- |
-| Captura | Um monitor por host, com cursor incluído |
+| Captura | Um monitor por transmissor, com cursor incluído; qualquer participante aprovado pode transmitir |
 | Salas | Convite aleatório de 128 bits, compartilhado por link HTTPS |
-| Aprovação | Opcional ao criar a sala; o host pode remover espectadores e encerrar a sala |
-| Viewers | Até quatro espectadores admitidos simultaneamente |
+| Aprovação | Opcional ao criar a sala; o criador pode remover participantes e encerrar a sala |
+| Participantes | Cinco aprovados no total: um transmissor e até quatro receptores |
 | Qualidade | Presets Baixa (720p/30), Alta (1080p/60) e Nativo |
+| Viewer | Ajustar à janela, tamanho real com rolagem, tela cheia e aviso de imagem congelada |
 | Vídeo | H.264 por hardware quando o teste do encoder passa; VP8 por CPU como alternativa |
-| Áudio | Desligado inicialmente; somente aplicativos selecionados pelo host |
+| Áudio | Envio desligado inicialmente; somente aplicativos selecionados pelo transmissor; volume/mute local no receptor |
 | Conexão | WebRTC P2P, com STUN configurável e TURN somente após dupla autorização |
 | Criptografia | DTLS-SRTP para mídia; negociação autenticada com o segredo do convite |
 | Diagnóstico | Rota por viewer, candidatos, estágio, bitrate, perda, latência e FPS |
 | Distribuição | AppImage Linux e EXE portátil Windows, sem instalador |
 
 Esta versão não inclui controle remoto, chat, gravação, webcam, microfone,
-múltiplos hosts ou compartilhamento de vários monitores ao mesmo tempo.
+transmissões simultâneas ou compartilhamento de vários monitores ao mesmo tempo.
 
 ## Plataformas e estado dos testes
 
@@ -117,15 +122,15 @@ seletivo. Não substitui essa função por captura de todo o som do computador.
 
 ```mermaid
 flowchart LR
-    H[Host] <-->|WSS: salas e negociação| S[Servidor de sinalização]
-    V[Viewer] <-->|WSS: salas e negociação| S
+    H[Transmissor] <-->|WSS: salas e negociação| S[Servidor de sinalização]
+    V[Receptor] <-->|WSS: salas e negociação| S
     H -->|P2P: mídia DTLS-SRTP| V
     H -.->|Mídia criptografada, após autorização| T[Relay TURN]
     T -.->|Mídia criptografada, após autorização| V
 ```
 
 O servidor de sinalização coordena criação, entrada, aprovação e negociação de
-conexão. No modo direto, ele não recebe a mídia. O host captura uma vez, mas
+conexão. No modo direto, ele não recebe a mídia. O transmissor captura uma vez, mas
 codifica e envia por viewer para adaptar o bitrate de cada conexão.
 
 P2P pode falhar por NAT, CGNAT, firewall ou políticas da operadora. STUN ajuda a
@@ -251,15 +256,25 @@ para transformar o servidor de teste em serviço público.
 4. A entrada é automática por padrão. Se ativou a checkbox, aprove cada solicitação
    pelo nickname. Nomes não são verificados e podem repetir.
    Abrir um convite de outra sala pede confirmação antes de sair da sessão atual.
-5. Clique **Compartilhar tela**, escolha qualidade e monitor. No Wayland, o sistema
-   abre o seletor de captura. Cancelar não inicia transmissão.
+5. Qualquer participante aprovado pode clicar **Compartilhar tela** quando a vez estiver livre.
+   Escolha qualidade e monitor. No Wayland, o sistema
+   abre o seletor de captura. Cancelar não inicia transmissão e libera a vez. A seleção tem reserva de até 60 segundos.
 6. Marque apenas os aplicativos cujo áudio deseja transmitir. Novos processos precisam
    de nova seleção. Microfone não faz parte desta versão.
 7. **Monitor / qualidade** permite ajustes. **Parar compartilhamento** interrompe
-   tela e áudio e preserva sala, convite e participantes. Retomar exige novo clique.
+   tela e áudio, libera a vez e preserva sala, convite e participantes. Retomar exige novo clique.
+   Enquanto alguém transmite, os outros assistem; o criador também pode ser receptor.
 8. Se P2P falhar, o app tenta relay por UDP, TCP e TLS, somente quando ambos permitirem.
    **Tentar novamente** reinicia uma conexão que falhou; **Remover** desconecta um viewer.
-9. **Encerrar / sair** encerra a sala no host.
+9. No viewer, use **Ajustar à janela** ou **Tamanho real (100%)** com rolagem. **Tela cheia**
+   ou F11 amplia somente o viewer; Esc restaura. Nome, avatar, estados e controles permanecem visíveis.
+10. **Volume recebido** e **Silenciar** afetam somente este computador. A escolha é preservada
+    em reconexões e trocas de transmissor. Uma falha de áudio não interrompe o vídeo.
+11. O estado mostra aprovação, espera, conexão, reconexão ou falha. **Ao vivo** exige vídeo recebido;
+    cinco segundos sem novos quadros mostram **Imagem congelada** sobre a última imagem.
+    Novos quadros removem o aviso; parar ou trocar de transmissão limpa a imagem.
+12. **Encerrar / sair** encerra a sala no criador; convidados apenas saem.
+    Uma queda do criador permite retomada por até 60 segundos. Reconectar não reinicia captura.
 
 ## Perfil e diagnósticos locais
 
@@ -280,9 +295,9 @@ Baixa usa 720p/30 e teto de 3 Mbps; Alta usa 1080p/60 e 8 Mbps. Nativo usa os
 pixels reais do monitor a 60 FPS, com teto proporcional entre 8 e 40 Mbps por viewer.
 Nativo pode exigir muita banda e processamento; os alvos não garantem desempenho.
 
-Cada viewer consome upload do host. Com quatro viewers próximos ao teto padrão,
+Cada receptor consome upload do transmissor. Com quatro viewers próximos ao teto padrão,
 só o vídeo pode chegar a aproximadamente 32 Mbps de upload, além de áudio e
-sobrecarga de transporte. Relay também consome o upload do host.
+sobrecarga de transporte. Relay também consome o upload do transmissor.
 
 O app procura encoders NVIDIA NVENC, Intel Quick Sync e VA-API. Antes de escolher
 um deles, testa codificação H.264 e decodificação de quadros. Se nenhum caminho
@@ -325,7 +340,7 @@ identidades independentes nem proteção contra outro participante malicioso que
 já possui esse convite. Viewers autorizados também podem gravar a tela usando
 outros programas.
 
-O servidor não usa banco de dados. Após desconexão do host, mantém a sala por
+O servidor não usa banco de dados. Após desconexão do criador, mantém a sala por
 até 60 segundos para permitir retomada e depois a encerra. Reiniciar o serviço
 apaga seu estado em memória. Os exemplos de infraestrutura desativam logs de
 acesso equivalentes no proxy, Coturn e containers. Provedor de hospedagem, DNS,

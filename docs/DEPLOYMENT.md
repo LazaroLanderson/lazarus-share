@@ -1,3 +1,17 @@
+# Migração para o protocolo v2
+
+Esta implementação exige protocolo v2 tanto no servidor quanto nos clientes.
+Atualize primeiro o servidor e depois distribua os clientes compatíveis.
+Clientes anteriores serão recusados com orientação para atualizar; clientes v2
+identificam servidores antigos e apresentam a incompatibilidade.
+A atualização encerra as salas em memória, portanto programe a troca fora das
+sessões. Consulte [o protocolo](PROTOCOL.md) e
+[a validação pendente](VALIDATION.md) antes da distribuição.
+
+A release 0.2.6 segue os gates de build Linux/Windows, implantação saudável e
+verificação externa HTTPS/WSS/TURN descritos abaixo. Consulte as execuções da
+entrega para comprovar o SHA ativo e os resultados.
+
 # Deploy 0.2.0 em VPS Oracle com um IP
 
 A configuração recomendada usa `infra/compose.single.yml`: HTTPS/WSS em 443,
@@ -330,7 +344,8 @@ URL de salas. Substituir certificados deve ser uma operação explícita.
 Publique primeiro o serviço e o proxy com `/join` e `requireApproval`, valide
 `https://share.app.lazaruslabs.com.br/join` e os testes de entrada automática e
 manual; só depois distribua os pacotes atualizados. O Docker inclui `join.html`.
-Clientes antigos continuam exigindo aprovação quando omitem a nova opção.
+Essa compatibilidade da opção de aprovação se aplicava ao protocolo anterior;
+na migração v2, clientes antigos precisam atualizar.
 O registro do protocolo é feito por usuário ao abrir o app; aponta para o EXE
 portátil original ou para `APPIMAGE`, sem depender dos arquivos extraídos. Se
 mover o pacote, abra-o no novo local para atualizar a associação.

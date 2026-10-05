@@ -235,7 +235,7 @@ void Peer::padAdded(GstElement *, GstPad *pad, gpointer data) {
     }else {
         // Audio playback has its own clock and bus. A failed device must never
         // return a flow error through the shared WebRTC transport/video pipeline.
-        QString playback="appsrc name=playback_audio is-live=true format=time do-timestamp=true block=false max-buffers=10 leaky-type=downstream ! queue max-size-time=200000000 leaky=downstream ! rtpopusdepay ! opusdec ! audioconvert name=audio_convert ! audioresample ! autoaudiosink name=audio_output sync=false";
+        QString playback="appsrc name=playback_audio is-live=true format=time do-timestamp=true block=false max-buffers=10 leaky-type=downstream ! queue max-size-time=200000000 leaky=downstream ! rtpopusdepay ! opusdec ! audioconvert name=audio_convert ! audioresample ! volume name=received_volume ! autoaudiosink name=audio_output sync=false";
 #ifdef LAZARUS_TESTING
         if(qEnvironmentVariableIsSet("LAZARUS_TEST_AUDIO_FLOW_FAILURE"))playback.replace("! autoaudiosink","! identity error-after=20 ! autoaudiosink");
         if(qEnvironmentVariableIsSet("LAZARUS_TEST_AUDIO_START_FAILURE"))playback.replace("autoaudiosink","missing-test-audio-output");
@@ -243,6 +243,8 @@ void Peer::padAdded(GstElement *, GstPad *pad, gpointer data) {
         GError *playbackError=nullptr;self->audioPlayback_=gst_parse_launch(playback.toUtf8().constData(),&playbackError);
         if(playbackError || !self->audioPlayback_){self->fail("audio_start","audio",nullptr,playbackError);if(playbackError)g_error_free(playbackError);}
         else {
+            auto *volume = gst_bin_get_by_name(GST_BIN(self->audioPlayback_), "received_volume");
+            if (volume) { g_object_set(volume, "volume", self->playbackVolume_, "mute", self->playbackMuted_, nullptr); gst_object_unref(volume); }
             self->playbackSource_=gst_bin_get_by_name(GST_BIN(self->audioPlayback_),"playback_audio");
             if(gst_element_set_state(self->audioPlayback_,GST_STATE_PLAYING)==GST_STATE_CHANGE_FAILURE)self->fail("audio_start","audio",GST_OBJECT(self->audioPlayback_));
         }
@@ -274,6 +276,15 @@ GstFlowReturn Peer::newFrame(GstAppSink *sink, gpointer data) {
         gst_video_frame_unmap(&frame);
     }
     gst_sample_unref(sample); return GST_FLOW_OK;
+}
+void Peer::playbackVolume(double volume, bool muted) {
+    // The receive mutex also protects creation/destruction on the streaming thread.
+    QMutexLocker lock(&receiveMutex_);
+    playbackVolume_ = qBound(0.0, volume, 1.0); playbackMuted_ = muted;
+    if (audioPlayback_) {
+        auto *control = gst_bin_get_by_name(GST_BIN(audioPlayback_), "received_volume");
+        if (control) { g_object_set(control, "volume", playbackVolume_, "mute", playbackMuted_, nullptr); gst_object_unref(control); }
+    }
 }
 QImage Peer::takeFrame() { QMutexLocker lock(&frameMutex_); QImage out = frame_; frame_ = {}; return out; }
 void Peer::push(GstElement *source, GstSample *sample,GstClockTime timestamp) {

@@ -27,6 +27,7 @@ public:
     void audio(GstSample *sample);
     void quality(Quality value);
     QImage takeFrame();
+    void playbackVolume(double volume, bool muted);
     QString inputFormat() const { return inputFormat_; }
     QString encoderFactory() const { return encoderFactory_; }
     QString encoderName() const { return encoderName_; }
@@ -67,6 +68,8 @@ private:
     std::atomic<bool> receivingH264_{false};
     bool softwareDecoder_ = false,audioCapsSet_ = false;
     std::atomic<bool> audioDiscarded_{false};
+    double playbackVolume_ = 1.0;
+    bool playbackMuted_ = false;
     Quality quality_;
     BitrateController control_;
     QString inputFormat_="I420",encoderFactory_;
