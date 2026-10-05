@@ -42,6 +42,7 @@ private:
         bool fatalMedia = false, exhausted = false, relayRequested = false, everConnected = false, modern = false;
         int generation = 1, retries = 0;
         bool software=false, selecting=false;
+        bool decoderSoftware=false,decoderRecovering=false,audioUnavailable=false;
         int selection=0;
         int encoderWidth=0,encoderHeight=0,encoderFps=0;
         int pendingRestart = 0;

@@ -10,7 +10,7 @@ quando host e viewer autorizaram essa possibilidade no perfil local.
 Sem contas, telemetria, anúncios, gravação ou histórico de salas no servidor.
 O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
-> **Versão 0.2.4, experimental.** O caminho Linux/Intel foi testado
+> **Versão 0.2.5, experimental.** O caminho Linux/Intel foi testado
 > localmente. O EXE Windows foi recompilado nativamente e passou no teste de
 > abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
@@ -43,14 +43,14 @@ implementação: a origem é autenticada pelo HTTPS do GitHub.
 
 | Plataforma | Executável portátil |
 | --- | --- |
-| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.4/LazarusShare-x86_64.AppImage) |
-| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.4/LazarusShare.exe) |
+| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.5/LazarusShare-x86_64.AppImage) |
+| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.5/LazarusShare.exe) |
 
-[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.4)
-· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.4/SHA256SUMS)
+[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.5)
+· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.5/SHA256SUMS)
 
 Para testar, abra o app, configure seu perfil local e crie uma sala ou entre com
-um convite. O servidor da VPS já vem configurado internamente. Baixe a 0.2.4 manualmente
+um convite. O servidor da VPS já vem configurado internamente. Baixe a versão atual manualmente
 para começar a usar as atualizações dentro do aplicativo. Captura e conexão em Windows 10/11 ainda precisam
 de testes em equipamentos reais.
 
@@ -483,10 +483,14 @@ local por UDP, TCP e TLS. Resultados e pendências: [VALIDATION.md](docs/VALIDAT
 | Portal não permite selecionar tela | Portal ScreenCast/PipeWire funcional e sessão Wayland; confira os recursos da sua distribuição. |
 | FPS baixo | Encoder indicado, FPS de captura/vídeo, resolução, carga da CPU/GPU, upload e quantidade de viewers. |
 | Áudio não aparece | Seleção explícita, app produzindo som, novo stream/processo após reinício e suporte da API no Windows. |
+| Conecta e falha ao decodificar vídeo | O receptor tenta H.264 por software uma vez. Se também falhar, use Tentar novamente e exporte o diagnóstico no computador que recebe. |
+| Áudio indisponível | A reprodução de áudio falhou; o vídeo continua. Confira o dispositivo de saída e tente novamente para recuperar o áudio. |
 | AppImage não abre por FUSE | Use `--appimage-extract-and-run`. |
 | Imagem fragmentada em pacote antigo | Atualize os dois clientes para 0.1.2; essa versão corrige descarte de fragmentos RTP. |
 
 Use **Exportar diagnóstico** para compartilhar métricas sanitizadas manualmente.
+Falhas de mídia registram componente, código, decoder e tentativa de recuperação,
+sem mensagens brutas, SDP ou credenciais. Exporte no participante que mostra o erro.
 Para investigar uma queda no caminho de captura Linux, há o roteiro manual
 [`scripts/diagnose-capture.sh`](scripts/diagnose-capture.sh), que requer GDB.
 Antes de abrir uma issue, confira se o conteúdo anexado não contém informações
@@ -574,3 +578,11 @@ atualizações dentro do aplicativo, preservando o perfil e recuperando a versã
 anterior se a nova não iniciar. A primeira instalação da 0.2.4 exige download
 manual; as próximas versões podem ser instaladas pelo app. Não há mudanças de
 servidor ou de protocolo de mídia nesta entrega. Veja [notas 0.2.4](docs/releases/0.2.4.md).
+
+## Recuperação de mídia — 0.2.5
+
+O espectador tenta decodificação H.264 por software uma vez quando o vídeo falha.
+A recuperação preserva o transporte no host atualizado. Falhas na reprodução de
+áudio desativam somente o áudio, mantendo o vídeo. Uma segunda falha de vídeo
+encerra a tentativa e permite nova tentativa manual. Atualize os dois participantes
+para usar toda a recuperação. Veja [notas 0.2.5](docs/releases/0.2.5.md).

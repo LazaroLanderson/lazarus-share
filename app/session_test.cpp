@@ -13,6 +13,18 @@
 #include <memory>
 #include <vector>
 struct PeerTestAccess {
+    static bool failReceiver(Peer &peer,bool audio){
+        auto *iterator=gst_bin_iterate_recurse(GST_BIN(audio?peer.audioPlayback_:peer.pipeline_));GValue value=G_VALUE_INIT;bool found=false;
+        while(gst_iterator_next(iterator,&value)==GST_ITERATOR_OK){
+            auto *element=GST_ELEMENT(g_value_get_object(&value));auto *factory=gst_element_get_factory(element);
+            const char *klass=factory?gst_element_factory_get_metadata(factory,GST_ELEMENT_METADATA_KLASS):nullptr;
+            const char *name=factory?gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory)):"";
+            if((audio && !strcmp(name,"autoaudiosink")) || (!audio && klass && strstr(klass,"Decoder") && strstr(klass,"Video"))){
+                auto *error=g_error_new_literal(audio?GST_RESOURCE_ERROR:GST_STREAM_ERROR,audio?int(GST_RESOURCE_ERROR_OPEN_WRITE):int(GST_STREAM_ERROR_DECODE),"Controlled receiver failure");
+                auto *bus=gst_element_get_bus(audio?peer.audioPlayback_:peer.pipeline_);gst_bus_post(bus,gst_message_new_error(GST_OBJECT(element),error,nullptr));gst_object_unref(bus);g_error_free(error);found=true;g_value_reset(&value);break;
+            }g_value_reset(&value);
+        }if(G_VALUE_TYPE(&value))g_value_unset(&value);gst_iterator_free(iterator);return found;
+    }
     static std::shared_ptr<std::atomic<unsigned>> watchFrames(Peer &peer){
         auto count=std::make_shared<std::atomic<unsigned>>(0);
         auto *sink=gst_bin_get_by_name(GST_BIN(peer.pipeline_),"frames");if(!sink)return {};
@@ -35,6 +47,28 @@ struct WindowTestAccess {
     struct Snapshot {QString id;int generation,transport;Peer *media;QString encoder;};
     static std::vector<Snapshot> snapshots(Window &w){std::vector<Snapshot> result;for(auto &[id,c]:w.peers_)result.push_back({id,c->generation,c->transport,c->media.get(),c->media?c->media->encoderName():QString{}});return result;}
     static void fail(Window &w,const Snapshot &s){auto &c=*w.peers_.at(s.id);c.software=false;PeerTestAccess::failEncoder(*c.media);}
+    static bool failReceiver(Window &w,bool audio){return PeerTestAccess::failReceiver(*w.peers_.begin()->second->media,audio);}
+    static bool receiverRecovered(Window &w,const Snapshot &s){
+        auto &c=*w.peers_.at(s.id);
+        if(c.generation!=s.generation+1 || c.transport!=s.transport || !c.media || !c.media->connected() || c.fatalMedia || !c.decoderSoftware || !c.media->softwareDecoder() || c.media->takeFrame().isNull())return false;
+        auto *factory=gst_element_factory_find(c.media->decoderName().toUtf8().constData());const char *klass=factory?gst_element_factory_get_metadata(factory,GST_ELEMENT_METADATA_KLASS):nullptr;
+        bool software=klass && !strstr(klass,"Hardware");if(factory)gst_object_unref(factory);return software;
+    }
+    static bool receiverTerminal(Window &w,const Snapshot &s){
+        auto &c=*w.peers_.at(s.id);int generation=c.generation;
+        w.mediaFailure(s.id,s.generation,"decoder_error");if(c.generation!=generation || !c.media)return false;
+        return failReceiver(w,false) && failReceiver(w,false);
+    }
+    static bool receiverStopped(Window &w){auto &c=*w.peers_.begin()->second;return c.fatalMedia && !c.media && !c.relayRequested && !c.decoderRecovering;}
+    static bool receiverRunning(Window &w){auto &c=*w.peers_.begin()->second;return c.media && c.media->connected() && !c.fatalMedia && !c.decoderRecovering && !c.media->takeFrame().isNull();}
+    static bool decoderTimeout(Window &w){
+        w.active_=true;w.host_=false;auto c=std::make_unique<Window::Connection>();c->decoderRecovering=c->decoderSoftware=true;c->started=w.time_.elapsed()-16000;w.peers_["timeout"]=std::move(c);
+        QMetaObject::invokeMethod(&w.maintenance_,"timeout",Qt::DirectConnection);
+        return receiverStopped(w) && w.peers_.at("timeout")->metrics["error_code"]=="decoder_retry_timeout";
+    }
+    static bool audioWarning(Window &w){return w.audioStatus_->text().contains("Áudio indisponível");}
+    static void staleRetry(Window &w,int generation){w.signal(w.peers_.begin()->first,{{"kind","retry-request"},{"reason","decoder_fallback"},{"generation",generation}});}
+    static void errors(Window &w){for(auto value:w.log_.events()){auto e=value.toObject();if(e["event"].toString()=="media_failure_detail")std::cerr<<"Receiver detail: "<<e["error_code"].toString().toStdString()<<' '<<e["component"].toString().toStdString()<<' '<<e["factory"].toString().toStdString()<<'\n';}}
     static bool recovered(Window &w,const std::vector<Snapshot> &saved){
         for(size_t i=0;i<saved.size();++i){auto &before=saved[i];auto &c=*w.peers_.at(before.id);
             if(c.transport!=before.transport || c.relayRequested)return false;
@@ -119,8 +153,13 @@ int main(int argc, char **argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat); QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,state.path());
     QCoreApplication::setOrganizationName("LazarusTests"); QCoreApplication::setApplicationName("Session");
     bool automatic=app.arguments().contains("--relay-auto"), denial=app.arguments().contains("--deny-relay"); int transport=0;
+    const bool audioFlowFailure=app.arguments().contains("--audio-flow-failure");
+    if(audioFlowFailure)qputenv("LAZARUS_TEST_AUDIO_FLOW_FAILURE","1");
+    const bool decoderRecovery=app.arguments().contains("--decoder-fallback"),audioRecovery=app.arguments().contains("--audio-failure") || audioFlowFailure;
+    if(decoderRecovery)qputenv("LAZARUS_TEST_H264","1");
     for(auto argument:app.arguments())if(argument.startsWith("--relay-transport="))transport=argument.section('=',1).toInt();
     Profile{"José",3,true}.save(); Window host; host.show();
+    if(app.arguments().contains("--decoder-timeout")){if(!WindowTestAccess::decoderTimeout(host))return 1;std::cout<<"Unanswered decoder recovery terminates after timeout\n";return 0;}
     if (app.arguments().contains("--update-controls")) {
         const auto link = Protocol::inviteLink(Protocol::randomBytes(16));
         WindowTestAccess::updateRoom(host, link);
@@ -199,7 +238,7 @@ int main(int argc, char **argv) {
         }
         if(automatic || denial)WindowTestAccess::expire(host);
         if(denial && stage==3 && WindowTestAccess::denied(host)) { passed=true; app.quit(); return; }
-        if(elapsed.elapsed()>(app.arguments().contains("--turn-renewal")?30000:20000)) { std::cerr<<"Session failed at stage "<<stage<<": "<<host.findChild<QLabel *>("status")->text().toStdString()<<'\n'; app.quit(); return; }
+        if(elapsed.elapsed()>(app.arguments().contains("--turn-renewal")?30000:20000)) { std::cerr<<"Session failed at stage "<<stage<<": "<<host.findChild<QLabel *>("status")->text().toStdString()<<'\n';WindowTestAccess::errors(host);for(auto &g:guests)WindowTestAccess::errors(*g); app.quit(); return; }
         if(stage==0 && host.findChild<QLabel *>("status")->text().startsWith("Sala criada")) {
             if(button(host,"Parar compartilhamento")->isEnabled()) { app.quit(); return; }
             auto token=host.findChild<QLineEdit *>("invite")->text();
@@ -211,12 +250,34 @@ int main(int argc, char **argv) {
             if(std::any_of(guests.begin(),guests.end(),[](auto &g) { return !g->template findChild<QLabel *>("video")->pixmap().isNull(); })) { std::cerr<<"Room captured without consent\n"; app.quit(); return; }
             share(host,0); ++stage;
         } else if(stage==3 && std::all_of(guests.begin(),guests.end(),[](auto &g) { return !g->template findChild<QLabel *>("video")->pixmap().isNull(); })) {
-            if(app.arguments().contains("--turn-renewal")){saved=WindowTestAccess::snapshots(host);
+            if(decoderRecovery || audioRecovery){
+                saved=WindowTestAccess::snapshots(host);guestSaved.push_back(WindowTestAccess::snapshots(*guests[0]));
+                if(!audioFlowFailure && !WindowTestAccess::failReceiver(*guests[0],audioRecovery)){std::cerr<<"Missing receive component for injection\n";app.quit();return;}
+                if(audioRecovery)frameCounters[0]=WindowTestAccess::watchFrames(*guests[0]);
+                stage=decoderRecovery?21:23;
+            }else if(app.arguments().contains("--turn-renewal")){saved=WindowTestAccess::snapshots(host);
                 for(int i=0;i<count;++i){guestSaved.push_back(WindowTestAccess::snapshots(*guests[i]));frameCounters[i]=WindowTestAccess::watchFrames(*guests[i]);if(!frameCounters[i]){std::cerr<<"Missing receive frame probe\n";app.quit();return;}initialDecoded[i]=decoded[i]=frameCounters[i]->load();frameAt[i]=elapsed.elapsed();}
                 approvedAt=elapsed.elapsed();stage=15;}
             else if(app.arguments().contains("--quality-live")){share(host,1);stage=14;}
             else if(app.arguments().contains("--encoder-fallback")){saved=WindowTestAccess::snapshots(host);WindowTestAccess::fail(host,saved.front());stage=13;}
             else {button(host,"Parar compartilhamento")->click();++stage;}
+        } else if(stage==21 && WindowTestAccess::receiverRecovered(*guests[0],guestSaved[0][0])){
+            auto current=WindowTestAccess::snapshots(host);
+            if(current[0].transport!=saved[0].transport || current[0].generation!=saved[0].generation+1){std::cerr<<"Decoder fallback changed transport or restarted twice\n";app.quit();return;}
+            WindowTestAccess::staleRetry(*guests[0],guestSaved[0][0].generation);
+            frameCounters[0]=WindowTestAccess::watchFrames(*guests[0]);stage=22;
+        } else if(stage==22 && frameCounters[0]->load()>=30){
+            if(!WindowTestAccess::receiverTerminal(*guests[0],guestSaved[0][0])){std::cerr<<"Software failure was not terminal or stale callback accepted\n";app.quit();return;}
+            approvedAt=elapsed.elapsed();stage=24;
+        } else if(stage==24 && elapsed.elapsed()-approvedAt>1200){
+            if(WindowTestAccess::snapshots(host)[0].generation!=saved[0].generation+1 || !WindowTestAccess::receiverStopped(*guests[0]) || !WindowTestAccess::receiverStopped(host)){std::cerr<<"Terminal decoder failure restarted again\n";app.quit();return;}
+            std::cout<<"Decoder recovery preserved transport, resumed frames and bounded retries\n";
+            button(*guests[0],"Tentar novamente")->click();stage=25;
+        } else if(stage==25 && WindowTestAccess::receiverRunning(*guests[0])){
+            std::cout<<"Manual retry restored video after terminal decoder failure\n";passed=true;app.quit();
+        } else if(stage==23 && frameCounters[0]->load()>=90){
+            if(!WindowTestAccess::unchanged(*guests[0],guestSaved[0]) || !WindowTestAccess::unchanged(host,saved) || !WindowTestAccess::audioWarning(*guests[0])){std::cerr<<"Audio failure interrupted media or lacked warning\n";app.quit();return;}
+            std::cout<<"Audio failure preserved connection and 90 subsequent video frames\n";passed=true;app.quit();
         } else if(stage==15 && elapsed.elapsed()-approvedAt>1500){
             if(!WindowTestAccess::lateAndFailure(host,saved)){std::cerr<<"Renewal error/duplicate damaged media\n";app.quit();return;}
             WindowTestAccess::renewalDue(host);renewalAt=elapsed.elapsed();stage=16;

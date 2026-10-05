@@ -21,7 +21,7 @@ class Peer : public QObject {
 public:
     explicit Peer(bool host, QObject *parent = nullptr);
     ~Peer() override;
-    bool start(Quality quality, const QString &stun, const QStringList &turn = {}, const VideoEncoder &backend = {});
+    bool start(Quality quality, const QString &stun, const QStringList &turn = {}, const VideoEncoder &backend = {}, bool softwareDecoder = false);
     void receive(const QJsonObject &message);
     void video(GstSample *sample);
     void audio(GstSample *sample);
@@ -31,6 +31,9 @@ public:
     QString encoderFactory() const { return encoderFactory_; }
     QString encoderName() const { return encoderName_; }
     bool connected() const { return connected_; }
+    bool softwareDecoder() const { return softwareDecoder_; }
+    bool receivingH264() const { return receivingH264_; }
+    QString decoderName() const { return decoderName_; }
 signals:
     void outgoing(QJsonObject message);
     void status(QString state);
@@ -38,6 +41,8 @@ signals:
     void error(QString message);
     void transportError();
     void mediaFailure(QString code);
+    void failureDetails(QJsonObject details);
+    void audioUnavailable();
 private:
 #ifdef LAZARUS_TESTING
     friend struct PeerTestAccess;
@@ -47,13 +52,21 @@ private:
     static void iceCandidate(GstElement *, guint, gchar *, gpointer);
     static void padAdded(GstElement *, GstPad *, gpointer);
     static GstFlowReturn newFrame(GstAppSink *, gpointer);
+    static GstFlowReturn playAudio(GstAppSink *,gpointer);
     void createDescription(bool offer);
     void poll();
     void stats();
     void applyStats(const QJsonObject &values);
+    void fail(const QString &code,const QString &component,GstObject *source = nullptr,const GError *error = nullptr);
+    void reportFailure(QJsonObject details);
+    void disableAudio();
     void push(GstElement *source, GstSample *sample,GstClockTime timestamp=GST_CLOCK_TIME_NONE);
     bool host_, offered_ = false, remoteSet_ = false, connected_ = false;
     GstElement *pipeline_ = nullptr, *rtc_ = nullptr, *video_ = nullptr, *audio_ = nullptr, *encoder_ = nullptr,*pay_=nullptr;
+    GstElement *audioBin_ = nullptr,*videoBin_ = nullptr,*audioPlayback_ = nullptr,*playbackSource_ = nullptr;
+    std::atomic<bool> receivingH264_{false};
+    bool softwareDecoder_ = false,audioCapsSet_ = false;
+    std::atomic<bool> audioDiscarded_{false};
     Quality quality_;
     BitrateController control_;
     QString inputFormat_="I420",encoderFactory_;
@@ -66,6 +79,7 @@ private:
     int bitrateMultiplier_ = 1000;
     QJsonArray pendingIce_;
     QMutex frameMutex_;
+    QMutex receiveMutex_;
     QImage frame_;
     QTimer timer_;
     QElapsedTimer statsTime_;

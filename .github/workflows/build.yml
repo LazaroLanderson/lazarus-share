@@ -34,11 +34,15 @@ jobs:
       - run: python3 -m venv .venv && .venv/bin/pip install -r server/requirements.txt && .venv/bin/python -m unittest discover -s server/tests -v
       - run: .venv/bin/python server/tests/automatic_relay.py
       - run: .venv/bin/python scripts/test-turn-renewal-session.py
+      - run: .venv/bin/python scripts/test-receiver-relay.py
       - run: |
           .venv/bin/python server/tests/session_local.py --four-viewers
           .venv/bin/python server/tests/session_local.py --four-viewers --auto-admission
           .venv/bin/python server/tests/session_local.py --invite-controls
           .venv/bin/python server/tests/session_local.py --four-viewers --encoder-fallback
+          .venv/bin/python server/tests/session_local.py --decoder-fallback
+          .venv/bin/python server/tests/session_local.py --audio-failure
+          .venv/bin/python server/tests/session_local.py --audio-flow-failure
           LAZARUS_VIDEO_ENCODER=vp8 .venv/bin/python server/tests/session_local.py --quality-live
       - run: .venv/bin/python server/tests/local_tls.py
       - run: python3 packaging/linux/bundle.py
@@ -81,6 +85,8 @@ jobs:
           QT_QPA_PLATFORM: offscreen
       - run: python packaging/windows/test_tls.py
       - run: python packaging/windows/bundle.py
+      - name: Test packaged Windows media without development runtime
+        run: python packaging/windows/test_media.py
       - name: Test portable Windows startup without development runtime
         shell: pwsh
         run: |

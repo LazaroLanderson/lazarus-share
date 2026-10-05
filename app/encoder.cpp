@@ -57,6 +57,14 @@ static bool validate(const QString &chain,int width,int height,int fps) {
 }
 VideoEncoder selectVideoEncoder(int fps,int kbps,int width,int height,bool software) {
     VideoEncoder result;
+#ifdef LAZARUS_TESTING
+    // Exercise H.264 receiver recovery on runners without a hardware encoder.
+    if(qEnvironmentVariableIsSet("LAZARUS_TEST_H264")){
+        result.factory="openh264enc";result.codec="H264";result.format="I420";result.name="H.264 / test encoder";
+        result.chain=QString("openh264enc name=encoder bitrate=%1 gop-size=%2").arg(kbps*1000).arg(fps);
+        result.bitrateProperty="bitrate";result.bitrateMultiplier=1000;return result;
+    }
+#endif
     if(!software && qEnvironmentVariable("LAZARUS_VIDEO_ENCODER")!="vp8") {
         static QMutex mutex;static QHash<QString,bool> probes;
         QMutexLocker lock(&mutex);
