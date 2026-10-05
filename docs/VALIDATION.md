@@ -227,3 +227,23 @@ configurações e dados são isolados; no Windows, o registro do protocolo de
 convites é salvo e restaurado. O workflow executa esse teste em ambos os sistemas.
 Uma execução Linux em sandbox precisa permitir sockets locais para a eleição
 de instância única. O teste não substitui o executável original distribuído.
+
+### Publicação 0.2.4 comprovada
+
+A [release experimental 0.2.4](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.4)
+foi publicada a partir de `168b6b4514814d7239fd3619bd8d3480e4baa8bd`.
+O [build Linux/Windows](https://github.com/LazaroLanderson/lazarus-share/actions/runs/37248705721)
+passou nos dois sistemas, incluindo substituição dos pacotes portáteis reais e
+confirmação da inicialização. Os testes Linux de sessão com quatro espectadores,
+pausa, retomada e alteração de qualidade também passaram.
+
+A [verificação externa da VPS](https://github.com/LazaroLanderson/lazarus-share/actions/runs/37248732511)
+passou no mesmo commit, com HTTPS/WSS e mídia TURN autenticada via UDP, TCP e TLS.
+Esta entrega altera somente o cliente; a infraestrutura existente foi verificada
+sem redeploy. Os três assets tiveram tamanho e SHA-256 conferidos pela API; o
+AppImage baixado da release passou em `--check-runtime` e `--smoke-test` com
+ambiente limpo e perfil temporário.
+
+Testes de captura e áudio entre computadores reais, outras GPUs, Windows 10/11
+e sessões longas em redes de operadora permanecem pendentes. A primeira instalação
+da 0.2.4 exige download manual; as próximas releases serão detectadas ao abrir.
