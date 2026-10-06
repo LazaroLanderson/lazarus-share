@@ -111,6 +111,7 @@ void Capture::launch(const QString &source) {
     pipeline_ = gst_parse_launch(text.toUtf8().constData(), &e);
     if (e) { emit error(QString::fromUtf8(e->message)); g_error_free(e); stop(); return; }
     filter_ = gst_bin_get_by_name(GST_BIN(pipeline_), "quality"); quality(quality_);
+    useMediaClock(pipeline_);
     auto *sink = gst_bin_get_by_name(GST_BIN(pipeline_), "frames");
     g_signal_connect(sink, "new-sample", G_CALLBACK(sample), this); gst_object_unref(sink);
     if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
@@ -121,6 +122,8 @@ void Capture::launch(const QString &source) {
 GstFlowReturn Capture::sample(GstAppSink *sink, gpointer data) {
     auto *self = static_cast<Capture *>(data);
     auto *sample = gst_app_sink_pull_sample(sink); if (!sample) return GST_FLOW_EOS;
+    auto *timed = withCaptureTime(sample, self->pipeline_);
+    gst_sample_unref(sample); sample = timed;
     QMutexLocker lock(&self->mutex_);
     if (self->latest_) {gst_sample_unref(self->latest_);++self->discarded_;}
     self->latest_ = sample;

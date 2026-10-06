@@ -11,13 +11,13 @@ quando transmissor e receptor autorizaram essa possibilidade no perfil local.
 Sem contas, telemetria, anúncios, gravação ou histórico de salas no servidor.
 O app é gratuito; quem hospeda a infraestrutura paga o servidor e o tráfego.
 
-> **Versão 0.2.6, experimental.** O caminho Linux/Intel foi testado
+> **Versão 0.2.7, experimental.** O caminho Linux/Intel foi testado
 > localmente. O EXE Windows foi recompilado nativamente e passou no teste de
 > abertura portátil em Windows no CI. Testes reais entre PCs, outras GPUs e redes de operadora continuam
 > pendentes. Consulte a [matriz de validação](docs/VALIDATION.md).
 
-> **Protocolo v2:** servidor e todos os participantes precisam atualizar para
-> a 0.2.6. Clientes anteriores são incompatíveis. Atualize o servidor antes dos clientes.
+> **Protocolo v2:** servidor e todos os participantes usam o protocolo v2 introduzido na 0.2.6.
+> Clientes 0.2.5 ou anteriores são incompatíveis. O servidor atual é compatível com a 0.2.7.
 
 ## Atualizações dentro do aplicativo
 
@@ -47,11 +47,11 @@ implementação: a origem é autenticada pelo HTTPS do GitHub.
 
 | Plataforma | Executável portátil |
 | --- | --- |
-| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.6/LazarusShare-x86_64.AppImage) |
-| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.6/LazarusShare.exe) |
+| Linux x64 | [LazarusShare-x86_64.AppImage](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.7/LazarusShare-x86_64.AppImage) |
+| Windows x64 | [LazarusShare.exe](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.7/LazarusShare.exe) |
 
-[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.6)
-· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.6/SHA256SUMS)
+[Notas da versão e arquivos](https://github.com/LazaroLanderson/lazarus-share/releases/tag/v0.2.7)
+· [Hashes SHA-256 dos executáveis](https://github.com/LazaroLanderson/lazarus-share/releases/download/v0.2.7/SHA256SUMS)
 
 Para testar, abra o app, configure seu perfil local e crie uma sala ou entre com
 um convite. O servidor da VPS já vem configurado internamente. Baixe a versão atual manualmente

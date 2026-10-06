@@ -50,7 +50,7 @@ bool Peer::start(Quality q, const QString &stun, const QStringList &turn,const V
             "%4 ! "
             "%6 "
             "appsrc name=audio is-live=true format=time do-timestamp=true block=false max-buffers=10 leaky-type=downstream "
-            "caps=audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved ! queue max-size-time=200000000 leaky=downstream ! audiomix. "
+            "min-latency=30000000 max-bytes=0 max-time=100000000 caps=audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=100000000 leaky=downstream ! audiomix. "
             "audiotestsrc is-live=true wave=silence samplesperbuffer=480 ! audio/x-raw,format=F32LE,rate=48000,channels=2 ! audiomix. "
             "audiomixer name=audiomix ignore-inactive-pads=true latency=10000000 ! audioconvert ! audioresample ! opusenc bitrate=96000 frame-size=10 audio-type=restricted-lowdelay ! "
             "rtpopuspay pt=97 ! application/x-rtp,media=audio,encoding-name=OPUS,payload=97 ! rtc.")
@@ -65,7 +65,14 @@ bool Peer::start(Quality q, const QString &stun, const QStringList &turn,const V
         GstElement *element = pipeline_; pipeline_ = gst_pipeline_new(nullptr);
         gst_bin_add(GST_BIN(pipeline_), element);
     }
+    useMediaClock(pipeline_);
     rtc_ = gst_bin_get_by_name(GST_BIN(pipeline_), "rtc");
+    // Encoding/mixing can finish at different times. RTCP synchronization must
+    // describe capture time rather than independently aligning packet send times.
+    if(auto *rtp=gst_bin_get_by_name(GST_BIN(rtc_),"rtpbin")) {
+        g_object_set(rtp,"rtcp-sync-send-time",FALSE,nullptr);
+        gst_object_unref(rtp);
+    }
     if (!stun.isEmpty()) g_object_set(rtc_, "stun-server", stun.toUtf8().constData(), nullptr);
     if (!turn.isEmpty()) {
         g_object_set(rtc_, "ice-transport-policy", GST_WEBRTC_ICE_TRANSPORT_POLICY_RELAY, nullptr);
@@ -204,9 +211,9 @@ void Peer::padAdded(GstElement *, GstPad *pad, gpointer data) {
     GError *error = nullptr;
     // Never drop RTP fragments or compressed references. A bounded decoded-frame
     // queue separates decoding from conversion and discards complete old images.
-    QString receive = video ? QString("queue name=receive_queue max-size-buffers=0 max-size-bytes=0 max-size-time=2000000000 ! %1 ! queue name=decoded_queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! videoconvert name=video_convert ! video/x-raw,format=BGRx ! appsink name=frames emit-signals=true sync=false max-buffers=1 drop=true")
+    QString receive = video ? QString("queue name=receive_queue max-size-buffers=0 max-size-bytes=0 max-size-time=2000000000 ! %1 ! queue name=decoded_queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! videoconvert name=video_convert ! video/x-raw,format=BGRx ! appsink name=frames emit-signals=true sync=false async=false max-buffers=1 drop=true")
         .arg(h264 ? "rtph264depay request-keyframe=true wait-for-keyframe=true ! video/x-h264,alignment=au ! h264parse ! decodebin name=decoder caps=video/x-raw" : "rtpvp8depay request-keyframe=true wait-for-keyframe=true ! vp8dec") :
-        "queue name=receive_queue max-size-time=200000000 leaky=downstream ! appsink name=audio_frames emit-signals=true sync=false max-buffers=10 drop=true";
+        "queue name=receive_queue max-size-time=200000000 leaky=downstream ! appsink name=audio_frames emit-signals=true sync=false async=false max-buffers=10 drop=true";
     auto *bin = gst_parse_bin_from_description(receive.toUtf8().constData(), FALSE, &error);
     if (error || !bin) { self->fail(video?"decoder_start":"audio_start",video?"video":"audio",nullptr,error);if(error)g_error_free(error);if(bin)gst_object_unref(bin);return; }
     if(video)self->videoBin_=bin;else self->audioBin_=bin;
@@ -233,18 +240,33 @@ void Peer::padAdded(GstElement *, GstPad *pad, gpointer data) {
         auto *sink = gst_bin_get_by_name(GST_BIN(bin), "frames");
         g_signal_connect(sink, "new-sample", G_CALLBACK(newFrame), self); gst_object_unref(sink);
     }else {
-        // Audio playback has its own clock and bus. A failed device must never
+        // Audio playback shares the transport clock/base time, but has its own bus.
+        // A failed device must never
         // return a flow error through the shared WebRTC transport/video pipeline.
-        QString playback="appsrc name=playback_audio is-live=true format=time do-timestamp=true block=false max-buffers=10 leaky-type=downstream ! queue max-size-time=200000000 leaky=downstream ! rtpopusdepay ! opusdec ! audioconvert name=audio_convert ! audioresample ! volume name=received_volume ! autoaudiosink name=audio_output sync=false";
+        QString playback="appsrc name=playback_audio is-live=true format=time do-timestamp=false block=false max-buffers=10 max-bytes=0 max-time=100000000 min-latency=20000000 leaky-type=downstream ! queue max-size-buffers=0 max-size-bytes=0 max-size-time=100000000 leaky=downstream ! rtpopusdepay ! opusdec ! audioconvert name=audio_convert ! audioresample ! volume name=received_volume ! autoaudiosink name=audio_output sync=true";
+        // The pipeline is live, so no preroll wait exists. Only pass properties
+        // every selected sink implements (autoaudiosink has no "async").
+#ifdef Q_OS_WIN
+        const QString output="wasapi2sink name=audio_output low-latency=true sync=true";
+#else
+        const QString output="autoaudiosink name=audio_output sync=true";
+#endif
+        playback.replace("autoaudiosink name=audio_output sync=true",output);
 #ifdef LAZARUS_TESTING
-        if(qEnvironmentVariableIsSet("LAZARUS_TEST_AUDIO_FLOW_FAILURE"))playback.replace("! autoaudiosink","! identity error-after=20 ! autoaudiosink");
-        if(qEnvironmentVariableIsSet("LAZARUS_TEST_AUDIO_START_FAILURE"))playback.replace("autoaudiosink","missing-test-audio-output");
+        // Keep exactly the production sink properties on the substitute sink.
+        if(qEnvironmentVariableIsSet("LAZARUS_TEST_AUDIO_RENDER"))playback.replace(output,"audio/x-raw,format=F32LE ! fakesink name=audio_output sync=true signal-handoffs=true processing-deadline=80000000");
+        if(qEnvironmentVariableIsSet("LAZARUS_TEST_AUDIO_FLOW_FAILURE"))playback.replace("! volume name=received_volume", "! identity error-after=20 ! volume name=received_volume");
+        if(qEnvironmentVariableIsSet("LAZARUS_TEST_AUDIO_START_FAILURE"))playback.replace(output,"missing-test-audio-output name=audio_output");
 #endif
         GError *playbackError=nullptr;self->audioPlayback_=gst_parse_launch(playback.toUtf8().constData(),&playbackError);
         if(playbackError || !self->audioPlayback_){self->fail("audio_start","audio",nullptr,playbackError);if(playbackError)g_error_free(playbackError);}
         else {
             auto *volume = gst_bin_get_by_name(GST_BIN(self->audioPlayback_), "received_volume");
             if (volume) { g_object_set(volume, "volume", self->playbackVolume_, "mute", self->playbackMuted_, nullptr); gst_object_unref(volume); }
+            auto *clock=gst_element_get_clock(self->pipeline_);
+            if(clock){gst_pipeline_use_clock(GST_PIPELINE(self->audioPlayback_),clock);gst_object_unref(clock);}
+            gst_element_set_start_time(self->audioPlayback_,GST_CLOCK_TIME_NONE);
+            gst_element_set_base_time(self->audioPlayback_,gst_element_get_base_time(self->pipeline_));
             self->playbackSource_=gst_bin_get_by_name(GST_BIN(self->audioPlayback_),"playback_audio");
             if(gst_element_set_state(self->audioPlayback_,GST_STATE_PLAYING)==GST_STATE_CHANGE_FAILURE)self->fail("audio_start","audio",GST_OBJECT(self->audioPlayback_));
         }
@@ -259,7 +281,9 @@ GstFlowReturn Peer::playAudio(GstAppSink *sink,gpointer data){
     auto *self=static_cast<Peer *>(data);auto *sample=gst_app_sink_pull_sample(sink);if(!sample)return GST_FLOW_EOS;
     if(!self->audioDiscarded_ && self->playbackSource_){
         if(!self->audioCapsSet_){gst_app_src_set_caps(GST_APP_SRC(self->playbackSource_),gst_sample_get_caps(sample));self->audioCapsSet_=true;}
-        auto *buffer=gst_buffer_copy(gst_sample_get_buffer(sample));GST_BUFFER_PTS(buffer)=GST_BUFFER_DTS(buffer)=GST_CLOCK_TIME_NONE;
+        auto *buffer=gst_buffer_copy(gst_sample_get_buffer(sample));
+        GST_BUFFER_PTS(buffer)=sampleRunningTime(sample);
+        GST_BUFFER_DTS(buffer)=GST_CLOCK_TIME_NONE;
         gst_app_src_push_buffer(GST_APP_SRC(self->playbackSource_),buffer);
     }
     gst_sample_unref(sample);return GST_FLOW_OK;
@@ -272,7 +296,12 @@ GstFlowReturn Peer::newFrame(GstAppSink *sink, gpointer data) {
         gst_video_frame_map(&frame, &info, gst_sample_get_buffer(sample), GST_MAP_READ)) {
         QImage image(static_cast<const uchar *>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 0)),
             GST_VIDEO_INFO_WIDTH(&info), GST_VIDEO_INFO_HEIGHT(&info), GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 0), QImage::Format_RGB32);
-        { QMutexLocker lock(&self->frameMutex_); if(!self->frame_.isNull())++self->displayDrops_;self->frame_ = image.copy(); ++self->decodedFrames_; }
+        { QMutexLocker lock(&self->frameMutex_);
+            // ~400 ms at 60 fps: covers playback latency plus RTCP lip-sync offset
+            // (~14 frames observed) while bounding full-size image copies.
+            while(self->frames_.size()>=24){self->frames_.pop_front();++self->displayDrops_;}
+            self->frames_.push_back({image.copy(),sampleRunningTime(sample)});++self->decodedFrames_;
+        }
         gst_video_frame_unmap(&frame);
     }
     gst_sample_unref(sample); return GST_FLOW_OK;
@@ -286,9 +315,26 @@ void Peer::playbackVolume(double volume, bool muted) {
         if (control) { g_object_set(control, "volume", playbackVolume_, "mute", playbackMuted_, nullptr); gst_object_unref(control); }
     }
 }
-QImage Peer::takeFrame() { QMutexLocker lock(&frameMutex_); QImage out = frame_; frame_ = {}; return out; }
+QImage Peer::takeFrame() {
+    GstClockTime running=GST_CLOCK_TIME_NONE;
+    auto *clock=pipeline_?gst_element_get_clock(pipeline_):nullptr;
+    if(clock){auto now=gst_clock_get_time(clock),base=gst_element_get_base_time(pipeline_);gst_object_unref(clock);if(GST_CLOCK_TIME_IS_VALID(base) && now>=base)running=now-base;}
+    auto latency=playbackLatency_.load();if(!GST_CLOCK_TIME_IS_VALID(latency))latency=0;
+    QMutexLocker lock(&frameMutex_);QImage out;
+    // Keep decoding independent of presentation. A synchronized appsink behind
+    // the leaky decoded queue would discard a latency window on every frame.
+    while(!frames_.empty()) {
+        auto &frame=frames_.front();
+        if(GST_CLOCK_TIME_IS_VALID(running) && GST_CLOCK_TIME_IS_VALID(frame.running) &&
+           (frame.running>running || latency>running-frame.running))break;
+        if(!out.isNull())++displayDrops_;
+        out=std::move(frame.image);frames_.pop_front();
+    }
+    return out;
+}
 void Peer::push(GstElement *source, GstSample *sample,GstClockTime timestamp) {
     if (!source || !sample) return;
+    if(gst_buffer_get_reference_timestamp_meta(gst_sample_get_buffer(sample),captureTimeCaps()) && !GST_CLOCK_TIME_IS_VALID(timestamp))return;
     gst_app_src_set_caps(GST_APP_SRC(source), gst_sample_get_caps(sample));
     GstBuffer *original = gst_sample_get_buffer(sample);
     GstBuffer *buffer = gst_buffer_copy(original);
@@ -297,15 +343,36 @@ void Peer::push(GstElement *source, GstSample *sample,GstClockTime timestamp) {
     GST_BUFFER_PTS(buffer) = timestamp; GST_BUFFER_DTS(buffer) = GST_CLOCK_TIME_NONE;
     gst_app_src_push_buffer(GST_APP_SRC(source), buffer);
 }
-void Peer::video(GstSample *s) {
-    if(!s)return;++inputFrames_;lastInputMs_=mediaNow();GstClockTime timestamp=GST_CLOCK_TIME_NONE;
+GstClockTime Peer::sendTimestamp(GstSample *sample,VideoTimeline &fallback) {
+    auto timestamp=captureRunningTime(sample,pipeline_);
+    if(gst_buffer_get_reference_timestamp_meta(gst_sample_get_buffer(sample),captureTimeCaps()))return timestamp;
+    // Older synthetic callers have no capture reference. Keep their spacing;
+    // real capture producers always attach the common absolute reference.
     auto *clock=gst_element_get_clock(pipeline_);auto base=gst_element_get_base_time(pipeline_);
     GstClockTime running=GST_CLOCK_TIME_NONE;
     if(clock){auto now=gst_clock_get_time(clock);gst_object_unref(clock);if(GST_CLOCK_TIME_IS_VALID(base) && now>=base)running=now-base;}
-    timestamp=videoTimeline_.map(GST_BUFFER_PTS(gst_sample_get_buffer(s)),running);
-    push(video_,s,timestamp);
+    return fallback.map(sampleRunningTime(sample),running);
 }
-void Peer::audio(GstSample *s) { push(audio_, s); }
+void Peer::video(GstSample *s) {
+    if(!s)return;++inputFrames_;lastInputMs_=mediaNow();
+    push(video_,s,sendTimestamp(s,videoTimeline_));
+}
+void Peer::audio(GstSample *s) {
+    if(!s || !audio_)return;
+    auto timestamp=sendTimestamp(s,audioTimeline_);
+    auto *clock=gst_element_get_clock(pipeline_);
+    if(clock && GST_CLOCK_TIME_IS_VALID(timestamp)) {
+        auto now=gst_clock_get_time(clock),base=gst_element_get_base_time(pipeline_);
+        if(GST_CLOCK_TIME_IS_VALID(base) && now>=base && now-base>=timestamp) {
+            guint64 minimum=0,maximum=GST_CLOCK_TIME_NONE;
+            gst_app_src_get_latency(GST_APP_SRC(audio_),&minimum,&maximum);
+            auto required=now-base-timestamp+10*GST_MSECOND;
+            if(required>minimum)gst_app_src_set_latency(GST_APP_SRC(audio_),required,maximum);
+        }
+    }
+    if(clock)gst_object_unref(clock);
+    push(audio_,s,timestamp);
+}
 void Peer::quality(Quality q) {
     quality_ = q; targetKbps_ = q.kbps; currentKbps_ = qMin(currentKbps_, targetKbps_); control_.target(q.kbps);
     if (encoder_) {
@@ -345,11 +412,31 @@ void Peer::disableAudio(){
         emit self->audioUnavailable();
     });
 }
+void Peer::updatePlaybackLatency() {
+    GstClockTime latency=0;
+    for(auto *pipeline:{pipeline_,audioDiscarded_?nullptr:audioPlayback_}) {
+        if(!pipeline)continue;
+        auto *query=gst_query_new_latency();
+        if(gst_element_query(pipeline,query)) {
+            gboolean live=false;GstClockTime minimum=0,maximum=GST_CLOCK_TIME_NONE;
+            gst_query_parse_latency(query,&live,&minimum,&maximum);
+            if(live && GST_CLOCK_TIME_IS_VALID(minimum))latency=qMax(latency,minimum);
+        }
+        gst_query_unref(query);
+    }
+    if(latency==playbackLatency_)return;
+    playbackLatency_=latency;
+    for(auto *pipeline:{pipeline_,audioDiscarded_?nullptr:audioPlayback_})if(pipeline) {
+        gst_pipeline_set_latency(GST_PIPELINE(pipeline),latency);
+        gst_bin_recalculate_latency(GST_BIN(pipeline));
+    }
+}
 void Peer::poll() {
     QMutexLocker receiveLock(&receiveMutex_);
     if(audioPlayback_){
         auto *audioBus=gst_element_get_bus(audioPlayback_);
-        while(auto *msg=gst_bus_pop_filtered(audioBus,GstMessageType(GST_MESSAGE_ERROR|GST_MESSAGE_EOS))){
+        while(auto *msg=gst_bus_pop_filtered(audioBus,GstMessageType(GST_MESSAGE_ERROR|GST_MESSAGE_EOS|GST_MESSAGE_LATENCY))){
+            if(GST_MESSAGE_TYPE(msg)==GST_MESSAGE_LATENCY){gst_message_unref(msg);continue;}
             GError *error=nullptr;gchar *debug=nullptr;
             if(GST_MESSAGE_TYPE(msg)==GST_MESSAGE_ERROR)gst_message_parse_error(msg,&error,&debug);
             fail(error?"audio_output":"audio_eos","audio",GST_MESSAGE_SRC(msg),error);
@@ -357,7 +444,8 @@ void Peer::poll() {
         }gst_object_unref(audioBus);
     }
     GstBus *bus = gst_element_get_bus(pipeline_);
-    while (auto *msg = gst_bus_pop_filtered(bus, GstMessageType(GST_MESSAGE_ERROR | GST_MESSAGE_EOS))) {
+    while (auto *msg = gst_bus_pop_filtered(bus, GstMessageType(GST_MESSAGE_ERROR | GST_MESSAGE_EOS | GST_MESSAGE_LATENCY))) {
+        if(GST_MESSAGE_TYPE(msg)==GST_MESSAGE_LATENCY){if(host_)gst_bin_recalculate_latency(GST_BIN(pipeline_));gst_message_unref(msg);continue;}
         if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR) {
             GError *e = nullptr; gchar *debug = nullptr; gst_message_parse_error(msg, &e, &debug);
             auto *source=GST_MESSAGE_SRC(msg);
@@ -376,6 +464,7 @@ void Peer::poll() {
         gst_message_unref(msg);
     }
     gst_object_unref(bus);
+    if(!host_)updatePlaybackLatency();
     GstWebRTCPeerConnectionState state; g_object_get(rtc_, "connection-state", &state, nullptr);
     const char *states[] = {"new", "connecting", "connected", "disconnected", "failed", "closed"};
     stage_ = state >= 0 && state <= GST_WEBRTC_PEER_CONNECTION_STATE_CLOSED ? QString::fromLatin1(states[state]) : "unknown";

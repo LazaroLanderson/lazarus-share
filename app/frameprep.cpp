@@ -1,4 +1,5 @@
 #include "frameprep.h"
+#include "frametime.h"
 void FramePreparer::clear(){if(converter_)gst_video_converter_free(converter_);converter_=nullptr;if(pool_){gst_buffer_pool_set_active(pool_,FALSE);gst_object_unref(pool_);}pool_=nullptr;if(caps_)gst_caps_unref(caps_);caps_=nullptr;}
 FramePreparer::~FramePreparer(){clear();}
 GstSample *FramePreparer::nv12(GstSample *source){
@@ -18,5 +19,7 @@ GstSample *FramePreparer::nv12(GstSample *source){
     if(a)gst_video_frame_unmap(&in);if(b)gst_video_frame_unmap(&out);
     if(!a || !b){gst_buffer_unref(buffer);return nullptr;}
     gst_buffer_copy_into(buffer,gst_sample_get_buffer(source),GST_BUFFER_COPY_TIMESTAMPS,0,-1);
+    if(auto *meta=gst_buffer_get_reference_timestamp_meta(gst_sample_get_buffer(source),captureTimeCaps()))
+        gst_buffer_add_reference_timestamp_meta(buffer,meta->reference,meta->timestamp,meta->duration);
     auto *sample=gst_sample_new(buffer,caps_,gst_sample_get_segment(source),nullptr);gst_buffer_unref(buffer);return sample;
 }

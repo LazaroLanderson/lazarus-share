@@ -34,6 +34,33 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
     check(timeline.map(GST_CLOCK_TIME_NONE,3*GST_SECOND)==GST_CLOCK_TIME_NONE,"Unknown timestamp was invented");
     check(timeline.map(33333333,4*GST_SECOND)==4*GST_SECOND,"Missing timestamp did not reanchor");
     check(timeline.map(66666666,GST_CLOCK_TIME_NONE)==GST_CLOCK_TIME_NONE,"Unknown pipeline clock was invented");
+    auto *captureClock=gst_pipeline_new(nullptr),*connectionClock=gst_pipeline_new(nullptr);
+    gst_element_set_base_time(captureClock,100*GST_SECOND);
+    gst_element_set_base_time(connectionClock,99*GST_SECOND);
+    GstSegment captureSegment;gst_segment_init(&captureSegment,GST_FORMAT_TIME);
+    captureSegment.start=2*GST_SECOND;captureSegment.base=GST_SECOND;
+    auto *captureBuffer=gst_buffer_new();GST_BUFFER_PTS(captureBuffer)=3*GST_SECOND;
+    auto *captureSample=gst_sample_new(captureBuffer,nullptr,&captureSegment,nullptr);
+    auto *timedCapture=withCaptureTime(captureSample,captureClock);
+    check(captureRunningTime(timedCapture,connectionClock)==3*GST_SECOND,"Capture segment/base time lost");
+    // Delivery delay is irrelevant: both streams retain the same absolute event.
+    check(captureRunningTime(timedCapture,connectionClock)==3*GST_SECOND,"Batch delivery reanchored capture");
+    gst_element_set_base_time(connectionClock,101*GST_SECOND);
+    check(captureRunningTime(timedCapture,connectionClock)==GST_SECOND,"Late viewer timeline mismatch");
+    gst_element_set_base_time(captureClock,101*GST_SECOND);
+    GST_BUFFER_PTS(captureBuffer)=2*GST_SECOND;
+    auto *restartedCapture=withCaptureTime(captureSample,captureClock);
+    check(captureRunningTime(restartedCapture,connectionClock)==GST_SECOND,"Audio reselection reset common time");
+    for(int second=0;second<=600;++second) {
+        GST_BUFFER_PTS(captureBuffer)=(2+second)*GST_SECOND;
+        auto *tick=withCaptureTime(captureSample,captureClock);
+        check(captureRunningTime(tick,connectionClock)==(1+second)*GST_SECOND,"Ten minute timeline drift");
+        gst_sample_unref(tick);
+    }
+    gst_element_set_base_time(connectionClock,103*GST_SECOND);
+    check(captureRunningTime(timedCapture,connectionClock)==GST_CLOCK_TIME_NONE,"Stale sample became new media after reconnect");
+    gst_sample_unref(restartedCapture);gst_sample_unref(timedCapture);gst_sample_unref(captureSample);gst_buffer_unref(captureBuffer);
+    gst_object_unref(captureClock);gst_object_unref(connectionClock);
     check(!encoderStalled(9000,8990,2000,2000,false),"Disconnected stall");check(!encoderStalled(9000,7000,2000,2000,true),"Capture pause triggered encoder stall");check(!encoderStalled(6999,6990,2000,2000,true),"Early stall");check(encoderStalled(7000,6990,2000,2000,true),"Five-second stall missing");check(!encoderStalled(7000,6990,6500,2000,true),"Output did not reset watchdog");
     BitrateController rate;for(int i=0;i<20;++i)check(rate.update(0,650,true)==8000,"Stable high RTT degraded bitrate");
     check(rate.update(.05,650,true)==6800,"One severe loss interval");
@@ -53,7 +80,10 @@ int main(int argc,char **argv){gst_init(&argc,&argv);QApplication app(argc,argv)
     gst_structure_free(out);gst_structure_free(remote);gst_structure_free(audio);gst_structure_free(reply);
     FramePreparer prepare;GstVideoInfo info{};gst_video_info_set_format(&info,GST_VIDEO_FORMAT_I420,1280,720);info.fps_n=30;info.fps_d=1;
     auto *caps=gst_video_info_to_caps(&info);auto *buffer=gst_buffer_new_allocate(nullptr,info.size,nullptr);gst_buffer_memset(buffer,0,128,info.size);GST_BUFFER_PTS(buffer)=123;
+    gst_buffer_add_reference_timestamp_meta(buffer,captureTimeCaps(),100*GST_SECOND,GST_CLOCK_TIME_NONE);
     auto *sample=gst_sample_new(buffer,caps,nullptr,nullptr);auto *converted=prepare.nv12(sample);check(converted,"NV12 conversion failed");
+    auto *captureMeta=gst_buffer_get_reference_timestamp_meta(gst_sample_get_buffer(converted),captureTimeCaps());
+    check(captureMeta && captureMeta->timestamp==100*GST_SECOND,"NV12 preparation lost common capture time");
     GstVideoInfo actual;check(gst_video_info_from_caps(&actual,gst_sample_get_caps(converted)),"Converted caps invalid");check(actual.width==1280 && actual.height==720 && GST_VIDEO_INFO_FORMAT(&actual)==GST_VIDEO_FORMAT_NV12,"Converted shape");check(GST_BUFFER_PTS(gst_sample_get_buffer(converted))==123,"Frame timestamp mismatch");
     GstVideoFrame frame;check(gst_video_frame_map(&frame,&actual,gst_sample_get_buffer(converted),GST_MAP_READ),"Converted map");check(static_cast<unsigned char *>(GST_VIDEO_FRAME_PLANE_DATA(&frame,0))[0]==128,"Conversion changed pixels");gst_video_frame_unmap(&frame);
     gst_sample_unref(converted);converted=nullptr;

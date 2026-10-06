@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <atomic>
+#include <deque>
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
 #include <gst/app/gstappsrc.h>
@@ -61,6 +62,8 @@ private:
     void fail(const QString &code,const QString &component,GstObject *source = nullptr,const GError *error = nullptr);
     void reportFailure(QJsonObject details);
     void disableAudio();
+    void updatePlaybackLatency();
+    GstClockTime sendTimestamp(GstSample *sample, VideoTimeline &fallback);
     void push(GstElement *source, GstSample *sample,GstClockTime timestamp=GST_CLOCK_TIME_NONE);
     bool host_, offered_ = false, remoteSet_ = false, connected_ = false;
     GstElement *pipeline_ = nullptr, *rtc_ = nullptr, *video_ = nullptr, *audio_ = nullptr, *encoder_ = nullptr,*pay_=nullptr;
@@ -83,7 +86,8 @@ private:
     QJsonArray pendingIce_;
     QMutex frameMutex_;
     QMutex receiveMutex_;
-    QImage frame_;
+    struct ScheduledFrame { QImage image; GstClockTime running; };
+    std::deque<ScheduledFrame> frames_;
     QTimer timer_;
     QElapsedTimer statsTime_;
     std::atomic<unsigned> videoSsrc_{0};
@@ -93,6 +97,8 @@ private:
     int pollCount_ = 0;
     int localCandidates_ = 0, remoteCandidates_ = 0;
     VideoTimeline videoTimeline_;
+    VideoTimeline audioTimeline_;
+    std::atomic<GstClockTime> playbackLatency_{GST_CLOCK_TIME_NONE};
     std::atomic<unsigned> decoderFrames_{0};
     QString decoderName_;
     QString encoderName_;

@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "frametime.h"
 #include <QCoreApplication>
 #include <QMutexLocker>
 #include <gst/app/gstappsrc.h>
@@ -264,11 +265,14 @@ void Audio::select(const QSet<QString> &ids) {
     pw_thread_loop_unlock(impl_->loop);
     if (!ok) { clearPipeline(); emit error("PipeWire recusou o áudio autorizado."); return; }
 #endif
+    useMediaClock(pipeline_);
     if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) { clearPipeline(); emit error("Áudio autorizado indisponível."); return; }
     for (auto &a : chosen) selected_.insert(a.id);
 }
 GstFlowReturn Audio::sample(GstAppSink *sink, gpointer data) {
     auto *self = static_cast<Audio *>(data); auto *s = gst_app_sink_pull_sample(sink); if (!s) return GST_FLOW_EOS;
+    auto *timed = withCaptureTime(s, self->pipeline_);
+    gst_sample_unref(s); s = timed;
     QMutexLocker lock(&self->mutex_);
     while (self->samples_.size() >= 10) gst_sample_unref(self->samples_.takeFirst());
     self->samples_.append(s); return GST_FLOW_OK;
