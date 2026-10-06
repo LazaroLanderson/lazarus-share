@@ -87,3 +87,6 @@ Desktop.ini
 !/docs/benchmarks/0.2.1-high2-software-retest.jsonl
 !/docs/benchmarks/0.2.1-vp8-before-speed.jsonl
 !/docs/benchmarks/0.2.1-display.jsonl
+
+# Local runner script
+run.sh

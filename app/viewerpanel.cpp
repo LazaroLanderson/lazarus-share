@@ -1,5 +1,6 @@
 #include "viewerpanel.h"
 #include "profile.h"
+#include "theme.h"
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QComboBox>
@@ -20,10 +21,11 @@ ViewerPanel::ViewerPanel(QWidget *parent) : QWidget(parent) {
     layout->addLayout(identity); layout->addWidget(state_);
     scroll_ = new QScrollArea; scroll_->setAlignment(Qt::AlignCenter); scroll_->setWidgetResizable(true);
     scroll_->setMinimumSize(400,260); scroll_->viewport()->installEventFilter(this);
+    scroll_->setStyleSheet("QScrollArea { background-color: #F0EEE3; border: 1px solid #EAE8DE; border-radius: 12px; }");
     frozen_ = new QLabel(scroll_->viewport()); frozen_->setObjectName("frozenWarning"); frozen_->setWordWrap(true);
-    frozen_->setAlignment(Qt::AlignCenter); frozen_->setStyleSheet("background: rgba(0,0,0,210); color: #ffd166; padding: 12px;"); frozen_->hide();
+    frozen_->setAlignment(Qt::AlignCenter); frozen_->setStyleSheet("background: rgba(255, 235, 235, 230); color: #BA1A1A; border: 1.5px solid #BA1A1A; border-radius: 8px; padding: 12px; font-weight: 600;"); frozen_->hide();
     video_ = new VideoView; video_->setObjectName("video"); video_->setAlignment(Qt::AlignCenter);
-    video_->setStyleSheet("background: #151515; color: white"); video_->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
+    video_->setStyleSheet("background: #FFFFFF; color: #1B1C16; border: 1px solid #EAE8DE; border-radius: 12px; font-size: 14px; font-weight: 600;"); video_->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
     video_->clearFrame("Aguardando compartilhamento"); scroll_->setWidget(video_); layout->addWidget(scroll_,1);
     auto *controls = new QHBoxLayout;
     size_ = new QComboBox; size_->setObjectName("viewerSize"); size_->addItems({"Ajustar à janela", "Tamanho real (100%)"});
@@ -53,8 +55,7 @@ void ViewerPanel::presentation(const QString &state,const QString &name,int avat
     if(state_->text()==state && transmitter_->text()==label && transmitter_->property("avatar").toInt()==avatar)return;
     state_->setTextFormat(Qt::PlainText); transmitter_->setTextFormat(Qt::PlainText);
     state_->setText(state); transmitter_->setText(label);
-    QPixmap icon(20,20); icon.fill(Qt::transparent); QPainter p(&icon); p.setPen(Qt::NoPen); p.setBrush(avatarColor(avatar)); p.drawEllipse(2,2,16,16); p.end();
-    avatar_->setPixmap(icon); transmitter_->setProperty("avatar",avatar);
+    avatar_->setPixmap(Theme::avatarPixmap(avatar, 20)); transmitter_->setProperty("avatar",avatar);
 
 }
 void ViewerPanel::updateFreeze(qint64 now) {

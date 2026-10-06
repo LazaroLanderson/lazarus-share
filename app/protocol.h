@@ -7,7 +7,7 @@ namespace Protocol {
 QByteArray randomBytes(int count);
 QString token(const QByteArray &secret);
 QByteArray secret(const QString &token);
-QString inviteLink(const QByteArray &secret);
+QString inviteLink(const QByteArray &secret, const QString &nickname = QString(), int avatar = -1);
 QByteArray inviteSecret(const QString &link);
 QString room(const QByteArray &secret);
 QString randomHex(int count);

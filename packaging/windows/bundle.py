@@ -59,6 +59,8 @@ if missing: raise SystemExit("Missing non-system DLLs: " + ", ".join(sorted(miss
 verify(app, tool("objdump"), system)
 shutil.copy2(repo / "LICENSE", app / "LICENSE")
 shutil.copytree(repo / "docs/licenses", app / "licenses", dirs_exist_ok=True)
+if (repo / "assets").exists():
+    shutil.copytree(repo / "assets", app / "assets", dirs_exist_ok=True)
 # MSYS2's runtime packages provide dependency notices in share/licenses.
 if (prefix / "share/licenses").exists():
     shutil.copytree(prefix / "share/licenses", app / "licenses/upstream", dirs_exist_ok=True)

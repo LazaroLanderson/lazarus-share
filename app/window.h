@@ -16,6 +16,7 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QElapsedTimer>
+#include <QStackedWidget>
 #include <map>
 #include <memory>
 class QVBoxLayout;
@@ -86,6 +87,30 @@ private:
     QString selectedPeer() const;
     Quality quality() const;
     void notice(const QString &message);
+    void showPage(int index);
+    void showComingSoon(const QString &feature = QString());
+    QWidget *createHeaderWidget();
+    QWidget *createHomePage();
+    QWidget *createPrepPage();
+    QWidget *createRoomPage();
+    QWidget *createSettingsPage();
+    void updateTelemetrySummary();
+    void updateRoomIndicators();
+    QStackedWidget *stack_ = nullptr;
+    int previousPageIndex_ = 0;
+    QLabel *headerStatusLabel_ = nullptr;
+    QLabel *prepTelemetrySummary_ = nullptr;
+    QLabel *roomSessionCodeLabel_ = nullptr;
+    QLabel *roomStatusBadge_ = nullptr;
+    QWidget *waitingModalWidget_ = nullptr;
+    QWidget *roomInviteBanner_ = nullptr;
+    QLabel *inviteHeadingLabel_ = nullptr;
+    QLabel *inviteAvatarLabel_ = nullptr;
+    QWidget *audioSourcesTray_ = nullptr;
+    QWidget *customQualityPanel_ = nullptr;
+    bool prepAudioEnabled_ = false;
+    QList<QWidget *> screenCards_;
+    QList<QWidget *> presetCards_;
     QLineEdit *token_;
     QCheckBox *requireApproval_;
     bool roomRequiresApproval_ = true;

@@ -1,30 +1,386 @@
 <!doctype html>
 <html lang="pt-BR">
+<head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Entrar no Lazarus Share</title>
+<title>Lazarus Share — Convite para assistir</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-body{font:18px system-ui,sans-serif;background:#151a24;color:#eef2fa;margin:0;display:grid;min-height:100vh;place-items:center}main{max-width:480px;padding:32px}a,button{display:inline-block;background:#5279eb;color:white;border:0;border-radius:8px;padding:14px 20px;font:inherit;text-decoration:none;margin:8px 8px 8px 0}p{line-height:1.6}input{box-sizing:border-box;width:100%;padding:12px;border-radius:6px;border:1px solid #778;background:#252d3d;color:white}small{color:#bdc7de}
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #FCFAEF;
+    color: #1B1C16;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .header-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    background: #FFFFFF;
+    border: 1px solid #EAE8DE;
+    border-radius: 9999px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  }
+  .brand-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #000000;
+  }
+  .card-container {
+    max-width: 520px;
+    width: 100%;
+    background: #FFFFFF;
+    border: 1.5px solid #EAE8DE;
+    border-radius: 20px;
+    padding: 36px 32px;
+    box-shadow: 0 12px 36px rgba(27,28,22,0.04);
+    text-align: center;
+    margin: 24px auto;
+  }
+  .live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background-color: #F0EEE3;
+    color: #006C4F;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    margin-bottom: 20px;
+  }
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #0FFCBE;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 0 2px rgba(15,252,190,0.3);
+  }
+  .avatar-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: #F0EEE3;
+    border: 2px solid #EAE8DE;
+    margin: 0 auto 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+  }
+  h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 22px;
+    line-height: 1.35;
+    font-weight: 700;
+    color: #000000;
+    margin-bottom: 10px;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #4C4546;
+    margin-bottom: 20px;
+  }
+  .features-grid {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .feature-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    background: #F6F4E9;
+    color: #1B1C16;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid #EAE8DE;
+  }
+  .actions-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  a.btn-primary, button.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    background: #000000;
+    color: #FFFFFF;
+    border: 0;
+    border-radius: 10px;
+    padding: 13px 20px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  a.btn-primary:hover, button.btn-primary:hover {
+    background: #1B1B1B;
+  }
+  a.btn-primary:active, button.btn-primary:active {
+    transform: scale(0.99);
+  }
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    background: #FFFFFF;
+    color: #1B1C16;
+    border: 1.5px solid #EAE8DE;
+    border-radius: 10px;
+    padding: 11px 20px;
+    font-family: 'Geist', sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .btn-secondary:hover {
+    background: #F6F4E9;
+  }
+  .link-tray {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  input#invite {
+    flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #E4E3D8;
+    background: #F6F4E9;
+    color: #1B1C16;
+  }
+  .status-text {
+    font-size: 12px;
+    color: #006C4F;
+    font-weight: 600;
+    margin-top: 14px;
+    min-height: 18px;
+  }
+  .notice-box {
+    margin-top: 20px;
+    padding: 12px 14px;
+    background: #F6F4E9;
+    border-radius: 8px;
+    border: 1px solid #EAE8DE;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #4C4546;
+    text-align: left;
+  }
+  .download-link {
+    display: inline-block;
+    margin-top: 18px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #000000;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .download-link:hover {
+    color: #006C4F;
+  }
+  .footer-bar {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #7E7576;
+    text-transform: uppercase;
+    text-align: center;
+  }
 </style>
-<main>
-<h1>Você recebeu um convite</h1>
-<p id="status">Abra o Lazarus Share e clique para entrar na sala.</p>
-<a id="open" hidden>Entrar no Lazarus Share</a>
-<button id="copy" hidden>Copiar link</button>
-<input id="invite" aria-label="Link do convite" readonly hidden>
-<p><small>Se o aplicativo não abrir, mantenha o Lazarus Share aberto, copie o link e use “Entrar com link”. O navegador pode pedir autorização para abrir o aplicativo.</small></p>
-<a href="https://github.com/LazaroLanderson/lazarus-share/releases" rel="noreferrer">Baixar Lazarus Share</a>
+</head>
+<body>
+
+<header class="header-brand">
+  <svg viewBox="0 0 1024 1024" width="22" height="22" style="display:block;">
+    <g fill="#01f2bd" fill-rule="evenodd">
+      <path d="M 804.466 160.400 C 800.016 162.339, 795.201 167.576, 793.983 171.803 C 793.329 174.073, 792.608 198.075, 792.115 234 C 791.674 266.175, 790.983 293.253, 790.579 294.173 C 789.647 296.296, 789.052 296.510, 775.636 299.537 C 763.521 302.271, 730.826 312.790, 722 316.794 C 718.975 318.166, 712.924 320.820, 708.553 322.691 C 688.190 331.408, 660.849 347.907, 642.168 362.753 C 624.875 376.494, 600.484 402.309, 587.475 420.637 C 577.566 434.599, 565.380 453.318, 561.525 460.500 C 559.458 464.350, 556.984 468.625, 556.027 470 C 555.069 471.375, 551.933 476.928, 549.058 482.339 C 540.633 498.194, 524.582 521.858, 512.996 535.505 C 505.119 544.783, 483.655 565.908, 479.370 568.600 C 477.791 569.591, 473.800 572.493, 470.500 575.047 C 435.392 602.225, 386.053 624.546, 334.500 636.576 C 310.359 642.209, 310.359 641.662, 334.500 645.125 C 348.120 647.078, 354.740 647.426, 379 647.460 C 398.137 647.487, 410.128 647.065, 415.500 646.176 C 427.102 644.256, 445.021 640.074, 448.500 638.475 C 450.150 637.717, 456.259 635.327, 462.075 633.165 C 467.891 631.003, 478.916 625.886, 486.575 621.794 C 499.849 614.703, 526.128 597.799, 526.833 595.898 C 527.017 595.404, 527.639 595, 528.216 595 C 529.894 595, 544.449 582.880, 558 570.198 C 572.980 556.179, 596.960 531.070, 615.014 510.500 C 666.649 451.669, 706.225 422.693, 753.864 408.837 C 766.632 405.123, 776.866 403.094, 783.095 403.040 C 791.228 402.969, 791 401.906, 791 439.869 C 791 470.485, 791.148 473.370, 792.894 476.790 C 795.854 482.591, 802.154 487, 807.482 487 C 813.830 487, 817.411 484.467, 858.376 451 C 874.197 438.075, 888.122 426.834, 889.321 426.019 C 890.519 425.204, 900.661 417.104, 911.858 408.019 C 934.111 389.962, 940.005 385.286, 956.500 372.607 C 979.391 355.011, 1001.526 336.342, 1004.458 332.160 C 1007.110 328.376, 1007.499 326.967, 1007.496 321.160 C 1007.490 312.845, 1004.354 306.935, 996.970 301.324 C 991.837 297.423, 951.095 264.694, 894.525 219.027 C 877.170 205.018, 862.167 193.093, 861.185 192.527 C 860.203 191.962, 851.322 184.983, 841.449 177.017 C 831.577 169.052, 821.942 161.739, 820.039 160.767 C 815.982 158.696, 808.768 158.526, 804.466 160.400 M 226.500 224.885 C 150.669 225.321, 118.917 225.825, 117.500 226.616 C 116.400 227.230, 113.149 228.031, 110.275 228.397 C 101.458 229.520, 84.962 234.927, 75.585 239.769 C 45.538 255.285, 24.751 281.689, 17.780 313.197 L 15.500 323.500 15.517 552.500 C 15.533 769.368, 15.629 781.889, 17.329 788.851 C 22.140 808.548, 30.624 823.940, 43.900 837.060 C 58.601 851.588, 77.155 861.501, 93.456 863.538 C 96.520 863.921, 99.272 864.631, 99.572 865.117 C 99.874 865.605, 118.680 866, 141.590 866 C 177.532 866, 183.140 865.800, 183.638 864.500 C 184.148 863.171, 220.674 863, 504.047 863 L 823.881 863 831.143 860.380 C 839.947 857.205, 852.628 850.302, 859.745 844.811 C 865.989 839.994, 875.681 829.810, 879.734 823.806 C 884.374 816.935, 891.860 801.023, 893.487 794.576 C 896.818 781.373, 897 772.344, 897 620.348 C 897 483.313, 896.843 467.986, 895.429 466.571 C 894.564 465.707, 893.309 465, 892.640 465 C 889.972 465, 883.601 469.178, 867.424 481.533 C 858.116 488.643, 845.325 498.358, 839 503.124 C 816.162 520.330, 810.910 525.667, 807.808 534.818 C 806.859 537.619, 806.429 562.545, 806.010 639 C 805.612 711.609, 805.136 740.405, 804.296 742.763 C 800.296 753.981, 789.446 766.719, 780 771.288 C 767.245 777.458, 791.843 777.044, 454.938 776.760 L 147.500 776.500 141.896 774.233 C 129.279 769.128, 118.604 758.631, 113.302 746.114 L 110.500 739.500 110.500 539.500 L 110.500 339.500 112.744 333.958 C 115.376 327.458, 121.771 317.380, 125.137 314.427 C 128.764 311.246, 137.252 306.152, 141.072 304.865 C 142.957 304.230, 145.132 303.213, 145.904 302.605 C 146.917 301.807, 224.337 301.361, 424.404 301 L 701.500 300.500 716 294.671 C 723.975 291.465, 735.361 287.237, 741.303 285.275 C 750.889 282.110, 752.477 281.246, 755.408 277.604 C 760.549 271.216, 761.076 268.510, 760.339 252.290 C 759.716 238.579, 759.544 237.671, 756.884 233.998 C 755.344 231.873, 752.002 228.914, 749.458 227.422 L 744.831 224.711 539.166 224.491 C 426.050 224.369, 285.350 224.547, 226.500 224.885 M 737.500 487.690 C 723.538 489.506, 707.346 494.805, 691.504 502.745 C 667.575 514.736, 653.107 525.892, 622.500 555.950 C 597.867 580.142, 591.268 586.064, 578.999 594.991 C 553.466 613.569, 527.814 627.687, 503 636.818 C 487.124 642.659, 476.536 646, 473.895 646 C 472.853 646, 472 646.505, 472 647.122 C 472 648.797, 524.514 647.582, 538.500 645.583 C 556.474 643.014, 569.079 640.237, 584.488 635.453 C 611.251 627.144, 621.714 622.708, 659.054 603.838 C 695.566 585.387, 706.841 580.729, 725 576.590 C 729.125 575.650, 733.247 574.479, 734.160 573.988 C 735.073 573.497, 740.923 572.349, 747.160 571.438 C 761.004 569.414, 763.587 568.189, 766.130 562.438 C 767.950 558.325, 768.065 555.987, 767.793 528.759 C 767.460 495.473, 767.465 495.497, 759.628 490.250 C 755.197 487.283, 754.151 487.013, 747.637 487.150 C 743.712 487.232, 739.150 487.475, 737.500 487.690" />
+    </g>
+    <g fill="#090909" fill-rule="evenodd">
+      <path d="M 273.500 326.817 C 264.299 329.398, 253.547 335.644, 246.657 342.412 C 237.294 351.609, 232.592 359.457, 228.402 372.887 C 226.409 379.274, 222.847 390.350, 220.486 397.500 C 218.125 404.650, 214.757 415.450, 213.001 421.500 C 211.246 427.550, 209.455 432.950, 209.022 433.500 C 208.589 434.050, 205.891 442.375, 203.026 452 C 200.161 461.625, 197.210 470.850, 196.469 472.500 C 195.727 474.150, 192.366 484.275, 189 495 C 182.428 515.934, 174.061 542.181, 163.497 575 C 159.868 586.275, 154.194 604.275, 150.888 615 C 147.583 625.725, 144.459 635.400, 143.946 636.500 C 141.193 642.406, 133.780 669.760, 132.768 677.743 C 130.893 692.542, 134.393 710.353, 141.641 722.894 C 145.527 729.618, 159.503 743.006, 166 746.227 C 169.025 747.727, 175.905 750.092, 181.289 751.484 L 191.077 754.014 406.289 753.735 C 609.029 753.473, 621.925 753.353, 628.837 751.669 C 646.747 747.305, 661.686 738.305, 676.617 722.883 C 685.412 713.799, 690.561 706.455, 696.354 694.730 C 700.913 685.502, 701.852 678.920, 699.309 674.001 C 695.684 666.990, 711.552 667.553, 502 667 L 312.500 666.500 306.368 662.749 C 295.937 656.369, 291.282 647.855, 292.269 636.965 C 292.560 633.760, 295.349 623.119, 298.467 613.319 C 306.537 587.954, 316.139 557.702, 323.483 534.500 C 326.965 523.500, 332.104 507.300, 334.903 498.500 C 337.701 489.700, 341.994 475.975, 344.443 468 C 346.891 460.025, 351.858 444.050, 355.479 432.500 C 359.100 420.950, 364.091 404.750, 366.570 396.500 C 369.049 388.250, 372.825 376.100, 374.960 369.500 C 377.096 362.900, 380.470 351.835, 382.458 344.911 C 386.326 331.442, 386.268 328.284, 382.114 326.061 C 380.787 325.351, 363.496 325.022, 329.816 325.067 C 285.842 325.126, 278.744 325.347, 273.500 326.817" />
+    </g>
+  </svg>
+  <span class="brand-title">Lazarus Share</span>
+</header>
+
+<main class="card-container">
+  <div class="live-pill">
+    <span class="pulse-dot"></span>
+    <span>Transmissão ao vivo</span>
+  </div>
+
+  <div class="avatar-circle" id="avatar-display">
+    <span id="avatar-emoji">🦆</span>
+  </div>
+
+  <h1 id="invite-title">
+    <strong id="host-name">Nickname 1</strong>, está te convidando para assistir com ele
+  </h1>
+
+  <p class="subtitle" id="subtitle-text">
+    Transmissão de tela privada, em tempo real e de alta qualidade diretamente entre navegadores.
+  </p>
+
+  <div class="features-grid">
+    <span class="feature-tag">⚡ Tempo Real (&lt;20ms)</span>
+    <span class="feature-tag">🔒 Ponta a Ponta</span>
+    <span class="feature-tag">✨ Sem Cadastro</span>
+  </div>
+
+  <div class="actions-group">
+    <a id="open" class="btn-primary" hidden>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>
+      </svg>
+      Entrar no Lazarus Share
+    </a>
+
+    <button id="copy" class="btn-secondary" hidden>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+      Copiar link da sala
+    </button>
+  </div>
+
+  <div class="link-tray" id="tray-box" hidden>
+    <input id="invite" aria-label="Link do convite" readonly>
+  </div>
+
+  <p class="status-text" id="status"></p>
+
+  <div class="notice-box">
+    <strong>Como assistir:</strong> Mantenha o Lazarus Share aberto no seu computador. Ao clicar no botão, seu navegador solicitará permissão para abrir o aplicativo diretamente na sala.
+  </div>
+
+  <div>
+    <a class="download-link" href="https://github.com/LazaroLanderson/lazarus-share/releases" rel="noreferrer" target="_blank">
+      Ainda não tem o aplicativo instalado? Baixar Lazarus Share
+    </a>
+  </div>
 </main>
+
+<footer class="footer-bar">
+  Lazarus Share v0.3.0 • Criptografia e Privacidade em Primeiro Lugar
+</footer>
+
 <script>
-const token=location.hash.slice(1);
-const valid=/^[A-Z2-7]{25}[AEIMQUY4]$/.test(token);
-const status=document.getElementById('status');
-if(valid){
- const link='https://share.app.lazaruslabs.com.br/join#'+token;
- const open=document.getElementById('open'),copy=document.getElementById('copy'),invite=document.getElementById('invite');
- open.href='lazarus-share://join#'+token;open.hidden=false;copy.hidden=false;invite.value=link;
- copy.onclick=async()=>{try{await navigator.clipboard.writeText(link);status.textContent='Link copiado. Cole no aplicativo para entrar.';}catch{invite.hidden=false;invite.select();status.textContent='Selecione e copie o link abaixo.';}};
-}else{status.textContent='Link de convite inválido. Peça um novo link ao anfitrião.';}
+(function() {
+  const hash = location.hash.slice(1);
+  const rawToken = hash.split('&')[0];
+  const valid = /^[A-Z2-7]{25}[AEIMQUY4]$/.test(rawToken);
+
+  const status = document.getElementById('status');
+  const inviteTitle = document.getElementById('invite-title');
+  const avatarEmoji = document.getElementById('avatar-emoji');
+  const open = document.getElementById('open');
+  const copy = document.getElementById('copy');
+  const invite = document.getElementById('invite');
+  const trayBox = document.getElementById('tray-box');
+
+  const avatarList = [
+    { name: 'Pato', emoji: '🦆' },
+    { name: 'Castor', emoji: '🦫' },
+    { name: 'Vaca', emoji: '🐮' },
+    { name: 'Bode', emoji: '🐐' },
+    { name: 'Rato', emoji: '🐭' },
+    { name: 'Leão', emoji: '🦁' },
+    { name: 'Raposa', emoji: '🦊' },
+    { name: 'Urso', emoji: '🐻' },
+    { name: 'Coruja', emoji: '🦉' },
+    { name: 'Sapo', emoji: '🐸' }
+  ];
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  }
+
+  if (valid) {
+    let nick = '';
+    let avatarIdx = 0;
+
+    if (hash.includes('&')) {
+      const parts = hash.split('&');
+      for (let i = 1; i < parts.length; i++) {
+        const pair = parts[i].split('=');
+        if (pair[0] === 'nick' && pair[1]) {
+          try { nick = decodeURIComponent(pair[1].replace(/\+/g, ' ')); } catch(e) { nick = pair[1]; }
+        }
+        if (pair[0] === 'avatar' && pair[1]) {
+          avatarIdx = parseInt(pair[1], 10) || 0;
+        }
+      }
+    }
+
+    if (avatarIdx < 0 || avatarIdx > 9) avatarIdx = 0;
+    avatarEmoji.textContent = avatarList[avatarIdx].emoji;
+
+    if (nick && nick.trim().length > 0) {
+      inviteTitle.innerHTML = '<strong>' + escapeHtml(nick.trim()) + '</strong>, está te convidando para assistir com ele';
+    } else {
+      inviteTitle.innerHTML = '<strong>Seu colega</strong>, está te convidando para assistir com ele';
+    }
+
+    const fullLink = location.href;
+    open.href = 'lazarus-share://join#' + hash;
+    open.hidden = false;
+    copy.hidden = false;
+    trayBox.hidden = false;
+    invite.value = fullLink;
+
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(fullLink);
+        status.textContent = 'Link copiado! Cole no aplicativo ou envie para amigos.';
+        copy.textContent = 'Link Copiado!';
+        setTimeout(() => { copy.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Copiar link da sala'; }, 2500);
+      } catch (err) {
+        invite.select();
+        status.textContent = 'Selecione e copie o link no campo acima.';
+      }
+    };
+  } else {
+    inviteTitle.textContent = 'Convite não encontrado ou inválido';
+    document.getElementById('subtitle-text').textContent = 'O código de acesso à sala não é válido. Peça um novo link a quem está compartilhando a tela.';
+    avatarEmoji.textContent = '⚠️';
+    status.textContent = 'Link de convite inválido.';
+    status.style.color = '#BA1A1A';
+  }
+})();
 </script>
+</body>
 </html>

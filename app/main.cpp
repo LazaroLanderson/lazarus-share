@@ -2,6 +2,7 @@
 #include "activation.h"
 #include "update_transaction.h"
 #include "encoder.h"
+#include "theme.h"
 #include <QApplication>
 #include <QTimer>
 #include <QMessageBox>
@@ -62,6 +63,7 @@ int main(int argc, char **argv) {
         std::cout << selectVideoEncoder(60, 8000).name.toStdString() << '\n'; return 0;
     }
     QApplication app(argc, argv);
+    Theme::apply(app);
     if (app.arguments().contains("--smoke-test")) QTimer::singleShot(500, &app, &QCoreApplication::quit);
     QCoreApplication::setOrganizationName("LazarusLabs");
     QCoreApplication::setApplicationName("LazarusShare");

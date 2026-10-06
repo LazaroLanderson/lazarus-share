@@ -14,7 +14,7 @@
 void Window::setupUpdates(QVBoxLayout *layout) {
     auto *banner = new QPushButton("Nova atualização disponível · Ver detalhes", this);
     banner->setObjectName("updateBanner"); banner->setFlat(true);
-    banner->setStyleSheet("QPushButton { text-align: left; padding: 5px 8px; background: #243c54; color: white; border-radius: 3px; }");
+    banner->setStyleSheet("QPushButton { text-align: left; padding: 6px 12px; background-color: #14FDBF; color: #002116; font-weight: 700; border: 1px solid #0FFCBE; border-radius: 6px; } QPushButton:hover { background-color: #38FFC3; }");
     layout->insertWidget(0, banner); banner->hide();
     auto *client = new UpdateClient(this);
     connect(client, &UpdateClient::available, banner, &QWidget::show);

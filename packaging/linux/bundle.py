@@ -89,6 +89,9 @@ repo = Path(__file__).resolve().parents[2]
 for name in ("AppRun", "lazarus-share.desktop", "lazarus-share.svg"):
     shutil.copy2(repo / "packaging/linux" / name, root / name)
 (root / "AppRun").chmod(0o755)
+if (repo / "assets").exists():
+    shutil.copytree(repo / "assets", root / "usr/bin/assets", dirs_exist_ok=True)
+    shutil.copytree(repo / "assets", root / "assets", dirs_exist_ok=True)
 license_dir = root / "usr/share/licenses"; license_dir.mkdir(parents=True, exist_ok=True)
 shutil.copy2(repo / "LICENSE", license_dir / "GPL-3.0.txt")
 shutil.copytree(repo / "docs/licenses", license_dir / "dependencies", dirs_exist_ok=True)

@@ -10,7 +10,12 @@ int main(int argc, char **argv) {
     check(Protocol::token(key).size() == 26);
     const auto link = Protocol::inviteLink(key);
     check(Protocol::inviteSecret(link) == key);
+    const auto richLink = Protocol::inviteLink(key, "Carlos Mendes", 2);
+    check(richLink.contains("&nick=Carlos%20Mendes"));
+    check(richLink.contains("&avatar=2"));
+    check(Protocol::inviteSecret(richLink) == key);
     check(Protocol::inviteSecret("lazarus-share://join#" + Protocol::token(key)) == key);
+    check(Protocol::inviteSecret("lazarus-share://join#" + Protocol::token(key) + "&nick=Ana&avatar=5") == key);
     for (const auto &bad : {Protocol::token(key), QString("https://evil.example/join#") + Protocol::token(key),
          QString("https://share.app.lazaruslabs.com.br/join?token=") + Protocol::token(key),
          QString("https://share.app.lazaruslabs.com.br:443/join#") + Protocol::token(key),

@@ -36,8 +36,15 @@ QByteArray secret(const QString &input) {
     }
     return out.size() == 16 && token(out) == normalized ? out : QByteArray();
 }
-QString inviteLink(const QByteArray &secret) {
-    return "https://share.app.lazaruslabs.com.br/join#" + token(secret);
+QString inviteLink(const QByteArray &secret, const QString &nickname, int avatar) {
+    QString link = "https://share.app.lazaruslabs.com.br/join#" + token(secret);
+    if (!nickname.trimmed().isEmpty()) {
+        link += "&nick=" + QString::fromUtf8(QUrl::toPercentEncoding(nickname.trimmed()));
+    }
+    if (avatar >= 0 && avatar <= 9) {
+        link += "&avatar=" + QString::number(avatar);
+    }
+    return link;
 }
 QByteArray inviteSecret(const QString &input) {
     const QUrl url(input.trimmed(), QUrl::StrictMode);
@@ -45,7 +52,10 @@ QByteArray inviteSecret(const QString &input) {
     const bool https = url.scheme() == "https" && url.host() == "share.app.lazaruslabs.com.br" && url.path() == "/join";
     const bool native = url.scheme() == "lazarus-share" && url.host() == "join" && url.path().isEmpty();
     if (!https && !native) return {};
-    return secret(url.fragment());
+    QString frag = url.fragment();
+    int sep = frag.indexOf('&');
+    if (sep >= 0) frag = frag.left(sep);
+    return secret(frag);
 }
 QString room(const QByteArray &secret) {
     return QString::fromLatin1(QCryptographicHash::hash("lazarus-share/room/v1:" + secret, QCryptographicHash::Sha256).toHex());

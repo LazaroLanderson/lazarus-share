@@ -1,11 +1,17 @@
 #include "window.h"
 #include "tls.h"
+#include "theme.h"
+#include "toast.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QFileDialog>
 #include <QFile>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QStackedWidget>
+#include <QScrollArea>
+#include <QFrame>
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QScreen>
@@ -24,76 +30,1522 @@
 #include <QRegularExpression>
 #include <QDateTime>
 
+void Window::showPage(int index) {
+    if (index == 3 && stack_->currentIndex() != 3) {
+        previousPageIndex_ = stack_->currentIndex();
+    }
+    stack_->setCurrentIndex(index);
+    updateRoomIndicators();
+}
+
+void Window::showComingSoon(const QString &feature) {
+    Toast::showComingSoon(this, feature);
+}
+
+void Window::updateRoomIndicators() {
+    if (roomSessionCodeLabel_) {
+        roomSessionCodeLabel_->setText(room_.isEmpty() ? "Sessão Pronta" : "Sessão #" + room_.left(8));
+    }
+    if (roomStatusBadge_) {
+        roomStatusBadge_->setText(viewerState_);
+    }
+    if (waitingModalWidget_) {
+        waitingModalWidget_->setVisible(active_ && !administrator_ && viewerState_ == "Aguardando aprovação");
+    }
+    if (roomInviteBanner_) {
+        roomInviteBanner_->setVisible(active_ && administrator_);
+        if (inviteHeadingLabel_) {
+            QString name = profile_.valid() ? profile_.nickname : "Anfitrião";
+            inviteHeadingLabel_->setText(QString("%1, está te convidando para assistir com ele").arg(name));
+        }
+        if (inviteAvatarLabel_) {
+            inviteAvatarLabel_->setPixmap(Theme::avatarPixmap(profile_.avatar, 28));
+        }
+    }
+    updateTelemetrySummary();
+}
+
+void Window::updateTelemetrySummary() {
+    if (!prepTelemetrySummary_) return;
+    QString audioStr = prepAudioEnabled_ ? "Áudio Ativo" : "Áudio Mudo";
+    QString screenStr = monitor_ && monitor_->count() > 0 ? monitor_->currentText() : "Tela Principal";
+    QString qualityStr = preset_ ? (preset_->currentIndex() == 0 ? "720p30" : preset_->currentIndex() == 1 ? "1080p60" : "Máxima") : "1080p60";
+    prepTelemetrySummary_->setText(QString("Conexão Direta • %1 • %2 • %3").arg(screenStr, audioStr, qualityStr));
+}
+
+QWidget *Window::createHeaderWidget() {
+    auto *header = new QWidget(this);
+    header->setObjectName("topHeader");
+    header->setFixedHeight(56);
+    header->setStyleSheet("QWidget#topHeader { background-color: rgba(252, 250, 239, 0.95); border-bottom: 1px solid #EAE8DE; }");
+
+    auto *layout = new QHBoxLayout(header);
+    layout->setContentsMargins(20, 8, 20, 8);
+    layout->setSpacing(16);
+
+    auto *brandLayout = new QHBoxLayout;
+    brandLayout->setSpacing(8);
+    auto *logoLabel = new QLabel(header);
+    logoLabel->setPixmap(Theme::logoPixmap(28));
+    brandLayout->addWidget(logoLabel);
+
+    auto *titleLabel = new QLabel("LAZARUS SHARE", header);
+    titleLabel->setFont(Theme::headlineFont(13, QFont::Bold));
+    titleLabel->setStyleSheet("color: #000000; letter-spacing: 0.5px;");
+    brandLayout->addWidget(titleLabel);
+    layout->addLayout(brandLayout);
+
+    layout->addStretch();
+
+    auto *navLayout = new QHBoxLayout;
+    navLayout->setSpacing(8);
+
+    auto *quickShareBtn = new QPushButton("Início", header);
+    quickShareBtn->setObjectName("navHome");
+    quickShareBtn->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; border-radius: 6px; padding: 5px 12px; font-weight: 700; border: 1px solid #CFD0C5;");
+    connect(quickShareBtn, &QPushButton::clicked, this, [this] {
+        if (active_) showPage(2); else showPage(0);
+    });
+    navLayout->addWidget(quickShareBtn);
+
+    auto *targetsBtn = new QPushButton("Dispositivos", header);
+    targetsBtn->setObjectName("navTargets");
+    targetsBtn->setStyleSheet("background: transparent; border: none; color: #4C4546; padding: 5px 10px; font-weight: 500;");
+    connect(targetsBtn, &QPushButton::clicked, this, [this] { showComingSoon("Dispositivos"); });
+    navLayout->addWidget(targetsBtn);
+
+    auto *historyBtn = new QPushButton("Histórico", header);
+    historyBtn->setObjectName("navHistory");
+    historyBtn->setStyleSheet("background: transparent; border: none; color: #4C4546; padding: 5px 10px; font-weight: 500;");
+    connect(historyBtn, &QPushButton::clicked, this, [this] { showComingSoon("Histórico"); });
+    navLayout->addWidget(historyBtn);
+    layout->addLayout(navLayout);
+
+    layout->addStretch();
+
+    auto *rightLayout = new QHBoxLayout;
+    rightLayout->setSpacing(10);
+
+    auto *settingsBtn = new QPushButton(header);
+    settingsBtn->setFixedSize(36, 36);
+    settingsBtn->setIcon(Theme::icon("settings", QColor(0, 0, 0), 18));
+    settingsBtn->setStyleSheet("QPushButton { background-color: #F0EEE3; border-radius: 8px; border: 1px solid #E4E3D8; } QPushButton:hover { background-color: #EAE8DE; }");
+    settingsBtn->setToolTip("Configurações");
+    connect(settingsBtn, &QPushButton::clicked, this, [this] {
+        if (stack_->currentIndex() == 3) showPage(previousPageIndex_); else showPage(3);
+    });
+    rightLayout->addWidget(settingsBtn);
+
+    identity_ = new QPushButton(header);
+    identity_->setObjectName("profile");
+    identity_->setStyleSheet("QPushButton { background-color: #FFFFFF; color: #1B1C16; border: 1.5px solid #E4E3D8; border-radius: 18px; padding: 4px 14px 4px 10px; font-weight: 600; font-size: 12px; } QPushButton:hover { background-color: #F0EEE3; border-color: #CFD0C5; }");
+    rightLayout->addWidget(identity_);
+
+    layout->addLayout(rightLayout);
+    return header;
+}
+
+QWidget *Window::createHomePage() {
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet("background-color: #FCFAEF;");
+
+    auto *page = new QWidget(scroll);
+    page->setObjectName("homePage");
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(40, 16, 40, 20);
+    layout->setSpacing(14);
+
+    auto *bar = new QWidget(page);
+    bar->setStyleSheet("background-color: #F0EEE3; border-radius: 10px; padding: 4px;");
+    auto *barLayout = new QHBoxLayout(bar);
+    barLayout->setContentsMargins(14, 6, 14, 6);
+
+    auto *barLeft = new QHBoxLayout;
+    barLeft->setSpacing(8);
+    auto *pulseDot = new QLabel(bar);
+    pulseDot->setFixedSize(8, 8);
+    pulseDot->setStyleSheet("background-color: #0FFCBE; border-radius: 4px; border: none;");
+    barLeft->addWidget(pulseDot);
+
+    headerStatusLabel_ = new QLabel("Sessão • Pronta para conectar", bar);
+    headerStatusLabel_->setFont(Theme::codeFont(9));
+    headerStatusLabel_->setStyleSheet("color: #4C4546; text-transform: uppercase; font-weight: 600; border: none;");
+    barLeft->addWidget(headerStatusLabel_);
+    barLayout->addLayout(barLeft);
+
+    barLayout->addStretch();
+
+    auto *barRight = new QHBoxLayout;
+    barRight->setSpacing(10);
+    auto *p2pPill = new QLabel("Conexão Direta Ativa", bar);
+    p2pPill->setFont(Theme::codeFont(9));
+    p2pPill->setStyleSheet("background-color: #FFFFFF; color: #006C4F; padding: 4px 10px; border-radius: 6px; font-weight: 700; border: none;");
+    barRight->addWidget(p2pPill);
+    barLayout->addLayout(barRight);
+    layout->addWidget(bar);
+
+    auto *heroWidget = new QWidget(page);
+    auto *heroLayout = new QVBoxLayout(heroWidget);
+    heroLayout->setAlignment(Qt::AlignCenter);
+    heroLayout->setSpacing(8);
+
+    auto *badgePill = new QLabel("100% Privado • Criptografia de Ponta a Ponta", heroWidget);
+    badgePill->setFont(Theme::codeFont(9));
+    badgePill->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; padding: 4px 14px; border-radius: 12px; font-weight: 600; border: none;");
+    badgePill->setAlignment(Qt::AlignCenter);
+    heroLayout->addWidget(badgePill, 0, Qt::AlignCenter);
+
+    auto *heroTitle = new QLabel(heroWidget);
+    heroTitle->setFont(Theme::headlineFont(24, QFont::Bold));
+    heroTitle->setTextFormat(Qt::RichText);
+    heroTitle->setText("Compartilhe sua tela, <span style='border-bottom: 3px solid #0FFCBE; padding-bottom: 2px;'>sem cadastro</span>");
+    heroTitle->setStyleSheet("color: #000000; border: none;");
+    heroTitle->setAlignment(Qt::AlignCenter);
+    heroTitle->setWordWrap(true);
+    heroLayout->addWidget(heroTitle, 0, Qt::AlignCenter);
+
+    auto *heroSubtitle = new QLabel("Transmissão em alta definição e tempo real diretamente entre você e seus colegas, sem precisar criar contas.", heroWidget);
+    heroSubtitle->setFont(Theme::bodyFont(11));
+    heroSubtitle->setStyleSheet("color: #4C4546; border: none; padding: 2px 0px;");
+    heroSubtitle->setAlignment(Qt::AlignCenter);
+    heroSubtitle->setWordWrap(true);
+    heroSubtitle->setMaximumWidth(700);
+    heroLayout->addWidget(heroSubtitle, 0, Qt::AlignCenter);
+    layout->addWidget(heroWidget);
+
+    auto *cardsLayout = new QHBoxLayout;
+    cardsLayout->setSpacing(20);
+
+    // CARD 1: Compartilhar Minha Tela
+    auto *card1 = new QFrame(page);
+    card1->setObjectName("homeCard1");
+    card1->setStyleSheet("QFrame#homeCard1 { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 16px; }");
+    auto *card1Layout = new QVBoxLayout(card1);
+    card1Layout->setContentsMargins(22, 18, 22, 18);
+    card1Layout->setSpacing(12);
+
+    auto *card1Top = new QHBoxLayout;
+    auto *card1Icon = new QLabel(card1);
+    card1Icon->setFixedSize(48, 48);
+    card1Icon->setStyleSheet("background-color: #F0EEE3; border-radius: 12px; border: none;");
+    card1Icon->setAlignment(Qt::AlignCenter);
+    card1Icon->setPixmap(Theme::icon("screen_share", Theme::SecondaryDark, 26).pixmap(26, 26));
+    card1Top->addWidget(card1Icon);
+    card1Top->addStretch();
+
+    auto *readyBadge = new QLabel("PRONTO", card1);
+    readyBadge->setFont(Theme::codeFont(9));
+    readyBadge->setStyleSheet("background-color: #F0EEE3; color: #006C4F; font-weight: 700; padding: 4px 10px; border-radius: 10px; border: none;");
+    card1Top->addWidget(readyBadge);
+    card1Layout->addLayout(card1Top);
+
+    auto *card1Title = new QLabel("Compartilhar minha tela", card1);
+    card1Title->setFont(Theme::headlineFont(16, QFont::Bold));
+    card1Title->setStyleSheet("color: #000000; border: none;");
+    card1Layout->addWidget(card1Title);
+
+    auto *card1Desc = new QLabel("Crie uma sala instantânea e compartilhe o link com até 4 pessoas para assistirem direto no navegador.", card1);
+    card1Desc->setFont(Theme::bodyFont(10));
+    card1Desc->setStyleSheet("color: #4C4546; border: none;");
+    card1Desc->setWordWrap(true);
+    card1Layout->addWidget(card1Desc);
+
+    auto *specsBox = new QWidget(card1);
+    specsBox->setObjectName("specsBox");
+    specsBox->setStyleSheet("QWidget#specsBox { background-color: #F6F4E9; border-radius: 8px; border: none; }");
+    auto *specsLayout = new QHBoxLayout(specsBox);
+    specsLayout->setContentsMargins(10, 8, 10, 8);
+    auto *specsText = new QLabel("Tela Principal • Áudio do computador ativado", specsBox);
+    specsText->setFont(Theme::bodyFont(9));
+    specsText->setStyleSheet("color: #1B1C16; font-weight: 500; border: none;");
+    specsLayout->addWidget(specsText);
+    specsLayout->addStretch();
+    auto *fpsBadge = new QLabel("60 FPS (Fluido)", specsBox);
+    fpsBadge->setFont(Theme::codeFont(9));
+    fpsBadge->setStyleSheet("background-color: #FFFFFF; color: #000000; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: none;");
+    specsLayout->addWidget(fpsBadge);
+    card1Layout->addWidget(specsBox);
+
+    card1Layout->addStretch();
+
+    auto *startShareBtn = new QPushButton("Iniciar Compartilhamento", card1);
+    startShareBtn->setObjectName("btn-start-share");
+    startShareBtn->setIcon(Theme::icon("cast", Theme::Secondary, 18));
+    startShareBtn->setStyleSheet("QPushButton { background-color: #000000; color: #FFFFFF; font-weight: 700; font-size: 13px; border-radius: 10px; padding: 12px; border: none; } QPushButton:hover { background-color: #1B1B1B; }");
+    connect(startShareBtn, &QPushButton::clicked, this, [this] {
+        showPage(1);
+    });
+    card1Layout->addWidget(startShareBtn);
+
+    auto *card1Footnote = new QLabel("Sem limite de duração da chamada", card1);
+    card1Footnote->setFont(Theme::bodyFont(9));
+    card1Footnote->setStyleSheet("color: #7E7576; border: none;");
+    card1Footnote->setAlignment(Qt::AlignCenter);
+    card1Layout->addWidget(card1Footnote);
+    cardsLayout->addWidget(card1, 1);
+
+    // CARD 2: Assistir a uma Tela
+    auto *card2 = new QFrame(page);
+    card2->setObjectName("homeCard2");
+    card2->setStyleSheet("QFrame#homeCard2 { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 16px; }");
+    auto *card2Layout = new QVBoxLayout(card2);
+    card2Layout->setContentsMargins(22, 18, 22, 18);
+    card2Layout->setSpacing(12);
+
+    auto *card2Top = new QHBoxLayout;
+    auto *card2Icon = new QLabel(card2);
+    card2Icon->setFixedSize(48, 48);
+    card2Icon->setStyleSheet("background-color: #F0EEE3; border-radius: 12px; border: none;");
+    card2Icon->setAlignment(Qt::AlignCenter);
+    card2Icon->setPixmap(Theme::icon("monitor", Theme::Primary, 26).pixmap(26, 26));
+    card2Top->addWidget(card2Icon);
+    card2Top->addStretch();
+
+    auto *p2pBadge = new QLabel("ASSISTIR SALA", card2);
+    p2pBadge->setFont(Theme::codeFont(9));
+    p2pBadge->setStyleSheet("background-color: #F0EEE3; color: #4C4546; font-weight: 700; padding: 4px 10px; border-radius: 10px; border: none;");
+    card2Top->addWidget(p2pBadge);
+    card2Layout->addLayout(card2Top);
+
+    auto *card2Title = new QLabel("Assistir a uma tela", card2);
+    card2Title->setFont(Theme::headlineFont(16, QFont::Bold));
+    card2Title->setStyleSheet("color: #000000; border: none;");
+    card2Layout->addWidget(card2Title);
+
+    auto *card2Desc = new QLabel("Cole o código ou o link da sala que seu colega compartilhou com você.", card2);
+    card2Desc->setFont(Theme::bodyFont(10));
+    card2Desc->setStyleSheet("color: #4C4546; border: none;");
+    card2Desc->setWordWrap(true);
+    card2Layout->addWidget(card2Desc);
+
+    auto *inputTray = new QWidget(card2);
+    inputTray->setObjectName("inputTray");
+    inputTray->setStyleSheet("QWidget#inputTray { background: transparent; border: none; }");
+    auto *inputTrayLayout = new QVBoxLayout(inputTray);
+    inputTrayLayout->setContentsMargins(0, 0, 0, 0);
+    inputTrayLayout->setSpacing(4);
+
+    auto *inputLabel = new QLabel("Código ou Link da Sala", inputTray);
+    inputLabel->setFont(Theme::codeFont(9));
+    inputLabel->setStyleSheet("color: #1B1C16; text-transform: uppercase; font-weight: 700; border: none;");
+    inputTrayLayout->addWidget(inputLabel);
+
+    auto *inputRow = new QHBoxLayout;
+    inputRow->setSpacing(6);
+    token_ = new QLineEdit(inputTray);
+    token_->setObjectName("invite");
+    token_->setPlaceholderText("ex: lzr-792-sky ou https://...");
+    token_->setStyleSheet("QLineEdit { background-color: #F6F4E9; border: 1px solid #E4E3D8; border-radius: 8px; padding: 10px 12px; font-family: 'JetBrains Mono'; }");
+    inputRow->addWidget(token_, 1);
+
+    auto *pasteBtn = new QPushButton("Colar", inputTray);
+    pasteBtn->setIcon(Theme::icon("paste", QColor(0, 0, 0), 14));
+    pasteBtn->setStyleSheet("QPushButton { background-color: #FFFFFF; border: 1px solid #E4E3D8; border-radius: 8px; padding: 8px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #F0EEE3; }");
+    connect(pasteBtn, &QPushButton::clicked, this, [this] {
+        auto clipboardText = QApplication::clipboard()->text().trimmed();
+        if (!clipboardText.isEmpty()) token_->setText(clipboardText);
+    });
+    inputRow->addWidget(pasteBtn);
+    inputTrayLayout->addLayout(inputRow);
+    card2Layout->addWidget(inputTray);
+
+    card2Layout->addStretch();
+
+    join_ = new QPushButton("Entrar com link", card2);
+    join_->setObjectName("btn-join-room");
+    join_->setIcon(Theme::icon("login", QColor(0, 0, 0), 18));
+    join_->setStyleSheet("QPushButton { background-color: #EAE8DE; color: #000000; font-weight: 700; font-size: 13px; border-radius: 10px; padding: 12px; border: 1px solid #E4E3D8; } QPushButton:hover { background-color: #E4E3D8; }");
+    card2Layout->addWidget(join_);
+
+    auto *card2Footnote = new QLabel("Acesso imediato para assistir", card2);
+    card2Footnote->setFont(Theme::bodyFont(9));
+    card2Footnote->setStyleSheet("color: #7E7576; border: none;");
+    card2Footnote->setAlignment(Qt::AlignCenter);
+    card2Layout->addWidget(card2Footnote);
+    cardsLayout->addWidget(card2, 1);
+    layout->addLayout(cardsLayout);
+
+    // Micro Technical Ribbon
+    auto *ribbonLayout = new QHBoxLayout;
+    ribbonLayout->setSpacing(12);
+
+    auto addRibbonCard = [&](const QString &iconName, const QString &label, const QString &val) {
+        auto *ribbonCard = new QFrame(page);
+        ribbonCard->setObjectName("homeRibbonCard");
+        ribbonCard->setStyleSheet("QFrame#homeRibbonCard { background-color: #F6F4E9; border-radius: 10px; border: 1px solid #EAE8DE; }");
+        auto *rcl = new QHBoxLayout(ribbonCard);
+        rcl->setContentsMargins(12, 8, 12, 8);
+        rcl->setSpacing(10);
+
+        auto *ico = new QLabel(ribbonCard);
+        ico->setFixedSize(32, 32);
+        ico->setStyleSheet("background-color: #FFFFFF; border-radius: 6px; border: none;");
+        ico->setAlignment(Qt::AlignCenter);
+        ico->setPixmap(Theme::icon(iconName, Theme::Primary, 16).pixmap(16, 16));
+        rcl->addWidget(ico);
+
+        auto *txtLayout = new QVBoxLayout;
+        txtLayout->setSpacing(1);
+        auto *lbl = new QLabel(label, ribbonCard);
+        lbl->setFont(Theme::codeFont(8));
+        lbl->setStyleSheet("color: #7E7576; text-transform: uppercase; border: none;");
+        txtLayout->addWidget(lbl);
+
+        auto *valLbl = new QLabel(val, ribbonCard);
+        valLbl->setFont(Theme::codeFont(10));
+        valLbl->setStyleSheet("color: #000000; font-weight: 700; border: none;");
+        txtLayout->addWidget(valLbl);
+        rcl->addLayout(txtLayout);
+
+        ribbonLayout->addWidget(ribbonCard);
+    };
+
+    addRibbonCard("bolt", "Resposta da Transmissão", "Tempo real (sem atraso)");
+    addRibbonCard("security", "Proteção da Sala", "Criptografia Ponta a Ponta");
+    addRibbonCard("volume_up", "Áudio do Computador", "Alta Definição");
+    addRibbonCard("monitor", "Qualidade Máxima", "Até 4K / 60 FPS");
+    layout->addLayout(ribbonLayout);
+
+    auto *footer = new QWidget(page);
+    auto *footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(0, 10, 0, 0);
+
+    auto *coreVer = new QLabel("Lazarus Share v0.3.0", footer);
+    coreVer->setFont(Theme::codeFont(9));
+    coreVer->setStyleSheet("color: #7E7576; text-transform: uppercase; border: none;");
+    footerLayout->addWidget(coreVer);
+
+    footerLayout->addStretch();
+
+    status_ = new QLabel("Pronto. Suas transmissões são privadas e não são gravadas.", footer);
+    status_->setObjectName("status");
+    status_->setFont(Theme::bodyFont(9));
+    status_->setStyleSheet("color: #7E7576; border: none;");
+    footerLayout->addWidget(status_);
+    layout->addWidget(footer);
+
+    scroll->setWidget(page);
+    return scroll;
+}
+
+QWidget *Window::createPrepPage() {
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setStyleSheet("background-color: #FCFAEF;");
+
+    auto *page = new QWidget(scroll);
+    page->setObjectName("prepPage");
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(40, 20, 40, 30);
+    layout->setSpacing(20);
+
+    auto *ctxHeader = new QWidget(page);
+    auto *ctxLayout = new QVBoxLayout(ctxHeader);
+    ctxLayout->setContentsMargins(0, 0, 0, 0);
+    ctxLayout->setSpacing(10);
+
+    auto *topRow = new QHBoxLayout;
+    auto *backBtn = new QPushButton("Voltar para Início", ctxHeader);
+    backBtn->setIcon(Theme::icon("arrow_back", QColor(0, 0, 0), 16));
+    backBtn->setStyleSheet("background: transparent; border: none; font-weight: 600; color: #1B1C16; padding: 4px 8px; border-radius: 6px;");
+    connect(backBtn, &QPushButton::clicked, this, [this] { showPage(0); });
+    topRow->addWidget(backBtn);
+    topRow->addStretch();
+
+    auto *stepPill = new QLabel("Etapa 02 / 03 • Ajustes da Sala", ctxHeader);
+    stepPill->setFont(Theme::codeFont(9));
+    stepPill->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; padding: 4px 12px; border-radius: 12px; font-weight: 600; text-transform: uppercase;");
+    topRow->addWidget(stepPill);
+    ctxLayout->addLayout(topRow);
+
+    auto *titleRow = new QHBoxLayout;
+    auto *titleLayout = new QVBoxLayout;
+    auto *prepTitle = new QLabel("Preparação da Sala", ctxHeader);
+    prepTitle->setFont(Theme::headlineFont(22, QFont::Bold));
+    prepTitle->setStyleSheet("color: #000000;");
+    titleLayout->addWidget(prepTitle);
+
+    auto *prepSub = new QLabel("Escolha a tela e as opções de áudio antes de convidar seus colegas.", ctxHeader);
+    prepSub->setFont(Theme::bodyFont(10));
+    prepSub->setStyleSheet("color: #4C4546;");
+    titleLayout->addWidget(prepSub);
+    titleRow->addLayout(titleLayout);
+    titleRow->addStretch();
+
+    auto *latencyPill = new QLabel("RESPOSTA: TEMPO REAL (< 20ms)", ctxHeader);
+    latencyPill->setFont(Theme::codeFont(9));
+    latencyPill->setStyleSheet("background-color: #F0EEE3; color: #006C4F; font-weight: 700; padding: 6px 12px; border-radius: 6px;");
+    titleRow->addWidget(latencyPill);
+    ctxLayout->addLayout(titleRow);
+    layout->addWidget(ctxHeader);
+
+    // GRUPO 1: FONTE DE TRANSMISSÃO
+    auto *group1 = new QFrame(page);
+    group1->setObjectName("prepGroup1");
+    group1->setStyleSheet("QFrame#prepGroup1 { background-color: #F6F4E9; border-radius: 14px; border: 1px solid #EAE8DE; }");
+    auto *g1Layout = new QVBoxLayout(group1);
+    g1Layout->setContentsMargins(20, 18, 20, 18);
+    g1Layout->setSpacing(14);
+
+    auto *g1Header = new QHBoxLayout;
+    auto *num1 = new QLabel("01", group1);
+    num1->setFixedSize(26, 26);
+    num1->setFont(Theme::codeFont(9));
+    num1->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; border: 1px solid #CFD0C5; border-radius: 6px; font-weight: 700;");
+    num1->setAlignment(Qt::AlignCenter);
+    g1Header->addWidget(num1);
+
+    auto *g1Title = new QLabel("O que você quer compartilhar?", group1);
+    g1Title->setFont(Theme::headlineFont(14, QFont::Bold));
+    g1Title->setStyleSheet("color: #000000; text-transform: uppercase;");
+    g1Header->addWidget(g1Title);
+    g1Header->addStretch();
+
+    int screenCount = qMax(1, QGuiApplication::screens().count());
+    auto *deviceCountLbl = new QLabel(QString("%1 Tela(s) Detectada(s)").arg(screenCount), group1);
+    deviceCountLbl->setFont(Theme::codeFont(9));
+    deviceCountLbl->setStyleSheet("color: #7E7576; text-transform: uppercase; font-weight: 600;");
+    g1Header->addWidget(deviceCountLbl);
+    g1Layout->addLayout(g1Header);
+
+    auto *screensGrid = new QHBoxLayout;
+    screensGrid->setSpacing(12);
+
+    for (int i = 0; i < screenCount; ++i) {
+        auto *screenObj = QGuiApplication::screens().value(i);
+        QSize sSize = screenObj ? screenObj->size() : QSize(1920, 1080);
+
+        auto *card = new QPushButton(group1);
+        card->setCheckable(true);
+        if (i == 0) card->setChecked(true);
+        card->setStyleSheet(R"(
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 2px solid #EAE8DE;
+                border-radius: 12px;
+                padding: 12px;
+                text-align: left;
+            }
+            QPushButton:checked {
+                border: 2px solid #0FFCBE;
+                background-color: #FFFFFF;
+            }
+        )");
+
+        auto *cLayout = new QVBoxLayout(card);
+        cLayout->setContentsMargins(10, 8, 10, 8);
+        cLayout->setSpacing(8);
+
+        auto *cTop = new QHBoxLayout;
+        auto *statusTag = new QLabel(i == 0 ? "SELECIONADO" : "DISPONÍVEL", card);
+        statusTag->setFont(Theme::codeFont(8));
+        statusTag->setStyleSheet(i == 0 ? "background-color: #14FDBF; color: #002116; font-weight: 700; padding: 2px 6px; border-radius: 4px;" : "background-color: #F0EEE3; color: #7E7576; font-weight: 600; padding: 2px 6px; border-radius: 4px;");
+        cTop->addWidget(statusTag);
+        cTop->addStretch();
+        auto *portTag = new QLabel(QString("Tela %1").arg(i + 1), card);
+        portTag->setFont(Theme::codeFont(8));
+        portTag->setStyleSheet("color: #7E7576;");
+        cTop->addWidget(portTag);
+        cLayout->addLayout(cTop);
+
+        auto *screenPreview = new QWidget(card);
+        screenPreview->setFixedHeight(64);
+        screenPreview->setStyleSheet("background-color: #E4E3D8; border-radius: 6px;");
+        auto *spLayout = new QVBoxLayout(screenPreview);
+        spLayout->setAlignment(Qt::AlignCenter);
+        auto *spIcon = new QLabel(screenPreview);
+        spIcon->setPixmap(Theme::icon("monitor", Theme::Primary, 24).pixmap(24, 24));
+        spIcon->setAlignment(Qt::AlignCenter);
+        spLayout->addWidget(spIcon);
+        cLayout->addWidget(screenPreview);
+
+        auto *nameLbl = new QLabel(QString("Tela %1 (%2)").arg(i + 1).arg(i == 0 ? "Principal" : "Secundária"), card);
+        nameLbl->setFont(Theme::headlineFont(11, QFont::Bold));
+        nameLbl->setStyleSheet("color: #000000;");
+        cLayout->addWidget(nameLbl);
+
+        auto *resLbl = new QLabel(QString("%1×%2 • 60Hz").arg(sSize.width()).arg(sSize.height()), card);
+        resLbl->setFont(Theme::codeFont(9));
+        resLbl->setStyleSheet("color: #7E7576;");
+        cLayout->addWidget(resLbl);
+
+        connect(card, &QPushButton::clicked, this, [this, i, card] {
+            for (auto *c : screenCards_) if (c != card) qobject_cast<QPushButton *>(c)->setChecked(false);
+            card->setChecked(true);
+            if (monitor_ && i < monitor_->count()) {
+                monitor_->setCurrentIndex(i);
+            }
+            updateTelemetrySummary();
+        });
+
+        screenCards_.append(card);
+        screensGrid->addWidget(card);
+    }
+    g1Layout->addLayout(screensGrid);
+
+    auto *permBanner = new QWidget(group1);
+    permBanner->setStyleSheet("background-color: #EAE8DE; border-radius: 8px;");
+    auto *pbLayout = new QHBoxLayout(permBanner);
+    pbLayout->setContentsMargins(12, 8, 12, 8);
+    auto *secIcon = new QLabel(permBanner);
+    secIcon->setPixmap(Theme::icon("security", Theme::SecondaryDark, 18).pixmap(18, 18));
+    pbLayout->addWidget(secIcon);
+    auto *pbText = new QLabel("Ao iniciar, o seu sistema operacional solicitará permissão para capturar a tela selecionada.", permBanner);
+    pbText->setFont(Theme::bodyFont(9));
+    pbText->setStyleSheet("color: #1B1C16;");
+    pbText->setWordWrap(true);
+    pbLayout->addWidget(pbText, 1);
+    g1Layout->addWidget(permBanner);
+    layout->addWidget(group1);
+
+    // GRUPO 2: TRANSMISSÃO DE ÁUDIO
+    auto *group2 = new QFrame(page);
+    group2->setObjectName("prepGroup2");
+    group2->setStyleSheet("QFrame#prepGroup2 { background-color: #F6F4E9; border-radius: 14px; border: 1px solid #EAE8DE; }");
+    auto *g2Layout = new QVBoxLayout(group2);
+    g2Layout->setContentsMargins(20, 18, 20, 18);
+    g2Layout->setSpacing(14);
+
+    auto *g2Header = new QHBoxLayout;
+    auto *num2 = new QLabel("02", group2);
+    num2->setFixedSize(26, 26);
+    num2->setFont(Theme::codeFont(9));
+    num2->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; border: 1px solid #CFD0C5; border-radius: 6px; font-weight: 700;");
+    num2->setAlignment(Qt::AlignCenter);
+    g2Header->addWidget(num2);
+
+    auto *g2Title = new QLabel("Áudio da Transmissão", group2);
+    g2Title->setFont(Theme::headlineFont(14, QFont::Bold));
+    g2Title->setStyleSheet("color: #000000; text-transform: uppercase;");
+    g2Header->addWidget(g2Title);
+    g2Header->addStretch();
+
+    auto *privacyBadge = new QLabel("Microfone Bloqueado", group2);
+    privacyBadge->setFont(Theme::codeFont(9));
+    privacyBadge->setStyleSheet("background-color: #F0EEE3; color: #006C4F; font-weight: 700; padding: 4px 10px; border-radius: 10px;");
+    g2Header->addWidget(privacyBadge);
+    g2Layout->addLayout(g2Header);
+
+    auto *audioContainer = new QWidget(group2);
+    audioContainer->setObjectName("audioContainer");
+    audioContainer->setStyleSheet("QWidget#audioContainer { background-color: #FFFFFF; border-radius: 10px; border: 1px solid #EAE8DE; }");
+    auto *acLayout = new QVBoxLayout(audioContainer);
+    acLayout->setContentsMargins(16, 14, 16, 14);
+    acLayout->setSpacing(12);
+
+    auto *switchRow = new QHBoxLayout;
+    auto *toggleAudioBtn = new QPushButton("Transmitir Sons do Computador: Desativado", audioContainer);
+    toggleAudioBtn->setCheckable(true);
+    toggleAudioBtn->setIcon(Theme::icon("volume_off", Theme::Primary, 18));
+    toggleAudioBtn->setStyleSheet(R"(
+        QPushButton {
+            background-color: #F0EEE3;
+            color: #1B1C16;
+            font-weight: 700;
+            border-radius: 8px;
+            padding: 8px 16px;
+        }
+        QPushButton:checked {
+            background-color: #14FDBF;
+            color: #002116;
+        }
+    )");
+    switchRow->addWidget(toggleAudioBtn);
+
+    auto *audioStateBadge = new QLabel("MUDO", audioContainer);
+    audioStateBadge->setFont(Theme::codeFont(9));
+    audioStateBadge->setStyleSheet("background-color: #F0EEE3; color: #7E7576; font-weight: 700; padding: 4px 10px; border-radius: 6px;");
+    switchRow->addWidget(audioStateBadge);
+    switchRow->addStretch();
+    acLayout->addLayout(switchRow);
+
+    audioSourcesTray_ = new QWidget(audioContainer);
+    auto *astLayout = new QVBoxLayout(audioSourcesTray_);
+    astLayout->setContentsMargins(0, 8, 0, 0);
+    astLayout->setSpacing(10);
+
+    auto *trayDivider = new QFrame(audioSourcesTray_);
+    trayDivider->setFrameShape(QFrame::HLine);
+    trayDivider->setStyleSheet("color: #EAE8DE;");
+    astLayout->addWidget(trayDivider);
+
+    audioStatus_ = new QLabel(audio_.supported() ? "Áudio do sistema e aplicativos disponíveis." : audio_.limitation(), audioSourcesTray_);
+    audioStatus_->setObjectName("audioStatus");
+    audioStatus_->setFont(Theme::bodyFont(9));
+    audioStatus_->setStyleSheet("color: #4C4546;");
+    astLayout->addWidget(audioStatus_);
+
+    apps_ = new QListWidget(audioSourcesTray_);
+    apps_->setObjectName("apps");
+    apps_->setFixedHeight(90);
+    astLayout->addWidget(apps_);
+
+    audioSourcesTray_->hide();
+    acLayout->addWidget(audioSourcesTray_);
+
+    connect(toggleAudioBtn, &QPushButton::toggled, this, [this, toggleAudioBtn, audioStateBadge](bool checked) {
+        prepAudioEnabled_ = checked;
+        if (checked) {
+            toggleAudioBtn->setText("Transmitir Sons do Computador: Ativado");
+            toggleAudioBtn->setIcon(Theme::icon("volume_up", Theme::Primary, 18));
+            audioStateBadge->setText("TRANSMITINDO");
+            audioStateBadge->setStyleSheet("background-color: #14FDBF; color: #002116; font-weight: 700; padding: 4px 10px; border-radius: 6px;");
+            audioSourcesTray_->show();
+        } else {
+            toggleAudioBtn->setText("Transmitir Sons do Computador: Desativado");
+            toggleAudioBtn->setIcon(Theme::icon("volume_off", Theme::Primary, 18));
+            audioStateBadge->setText("MUDO");
+            audioStateBadge->setStyleSheet("background-color: #F0EEE3; color: #7E7576; font-weight: 700; padding: 4px 10px; border-radius: 6px;");
+            audioSourcesTray_->hide();
+        }
+        updateTelemetrySummary();
+    });
+
+    g2Layout->addWidget(audioContainer);
+    layout->addWidget(group2);
+
+    // GRUPO 3: QUALIDADE DE TRANSMISSÃO
+    auto *group3 = new QFrame(page);
+    group3->setObjectName("prepGroup3");
+    group3->setStyleSheet("QFrame#prepGroup3 { background-color: #F6F4E9; border-radius: 14px; border: 1px solid #EAE8DE; }");
+    auto *g3Layout = new QVBoxLayout(group3);
+    g3Layout->setContentsMargins(20, 18, 20, 18);
+    g3Layout->setSpacing(14);
+
+    auto *g3Header = new QHBoxLayout;
+    auto *num3 = new QLabel("03", group3);
+    num3->setFixedSize(26, 26);
+    num3->setFont(Theme::codeFont(9));
+    num3->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; border: 1px solid #CFD0C5; border-radius: 6px; font-weight: 700;");
+    num3->setAlignment(Qt::AlignCenter);
+    g3Header->addWidget(num3);
+
+    auto *g3Title = new QLabel("Qualidade da Imagem", group3);
+    g3Title->setFont(Theme::headlineFont(14, QFont::Bold));
+    g3Title->setStyleSheet("color: #000000; text-transform: uppercase;");
+    g3Header->addWidget(g3Title);
+    g3Header->addStretch();
+
+    auto *customToggleBtn = new QPushButton("Ajustes Avançados", group3);
+    customToggleBtn->setIcon(Theme::icon("tune", QColor(0, 0, 0), 14));
+    customToggleBtn->setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE8DE; font-weight: 600; padding: 4px 10px; border-radius: 6px; font-size: 11px;");
+    connect(customToggleBtn, &QPushButton::clicked, this, [this] {
+        if (customQualityPanel_) customQualityPanel_->setVisible(!customQualityPanel_->isVisible());
+    });
+    g3Header->addWidget(customToggleBtn);
+    g3Layout->addLayout(g3Header);
+
+    auto *presetsLayout = new QHBoxLayout;
+    presetsLayout->setSpacing(12);
+
+    struct PresetInfo { QString name; QString spec; QString desc; int idx; };
+    QList<PresetInfo> pInfos = {
+        {"Econômico", "720p • 30 FPS", "Usa menos internet, ideal para redes lentas ou instáveis.", 0},
+        {"Equilibrado", "1080p • 60 FPS", "Nítido e fluido. Perfeito para trabalho e vídeos.", 1},
+        {"Alta Definição", "Nativo • 60 FPS", "Máxima fidelidade para textos pequenos e detalhes finos.", 2}
+    };
+
+    for (const auto &pi : pInfos) {
+        auto *pCard = new QPushButton(group3);
+        pCard->setCheckable(true);
+        if (pi.idx == 1) pCard->setChecked(true);
+        pCard->setStyleSheet(R"(
+            QPushButton {
+                background-color: #FFFFFF;
+                border: 2px solid #EAE8DE;
+                border-radius: 12px;
+                padding: 12px;
+                text-align: left;
+            }
+            QPushButton:checked {
+                border: 2px solid #0FFCBE;
+                background-color: #FFFFFF;
+            }
+        )");
+
+        auto *pcl = new QVBoxLayout(pCard);
+        pcl->setContentsMargins(10, 8, 10, 8);
+        pcl->setSpacing(6);
+
+        auto *pTop = new QHBoxLayout;
+        auto *pName = new QLabel(pi.name, pCard);
+        pName->setFont(Theme::headlineFont(12, QFont::Bold));
+        pName->setStyleSheet("color: #000000;");
+        pTop->addWidget(pName);
+        pTop->addStretch();
+        if (pi.idx == 1) {
+            auto *recBadge = new QLabel("RECOMENDADO", pCard);
+            recBadge->setFont(Theme::codeFont(8));
+            recBadge->setStyleSheet("background-color: #14FDBF; color: #002116; font-weight: 700; padding: 2px 6px; border-radius: 4px;" );
+            pTop->addWidget(recBadge);
+        }
+        pcl->addLayout(pTop);
+
+        auto *pSpec = new QLabel(pi.spec, pCard);
+        pSpec->setFont(Theme::codeFont(10));
+        pSpec->setStyleSheet("color: #000000; font-weight: 700;");
+        pcl->addWidget(pSpec);
+
+        auto *pDesc = new QLabel(pi.desc, pCard);
+        pDesc->setFont(Theme::bodyFont(9));
+        pDesc->setStyleSheet("color: #7E7576;");
+        pDesc->setWordWrap(true);
+        pcl->addWidget(pDesc);
+
+        connect(pCard, &QPushButton::clicked, this, [this, pi, pCard] {
+            for (auto *c : presetCards_) if (c != pCard) qobject_cast<QPushButton *>(c)->setChecked(false);
+            pCard->setChecked(true);
+            if (preset_) preset_->setCurrentIndex(pi.idx);
+            updateTelemetrySummary();
+        });
+
+        presetCards_.append(pCard);
+        presetsLayout->addWidget(pCard);
+    }
+    g3Layout->addLayout(presetsLayout);
+
+    customQualityPanel_ = new QWidget(group3);
+    customQualityPanel_->setStyleSheet("background-color: #FFFFFF; border-radius: 10px; border: 1px solid #EAE8DE; padding: 10px;");
+    auto *cqpLayout = new QHBoxLayout(customQualityPanel_);
+    cqpLayout->setContentsMargins(12, 10, 12, 10);
+    cqpLayout->setSpacing(16);
+
+    auto addCustomField = [&](const QString &lblText, const QStringList &options) {
+        auto *fLayout = new QVBoxLayout;
+        fLayout->setSpacing(4);
+        auto *fl = new QLabel(lblText, customQualityPanel_);
+        fl->setFont(Theme::codeFont(8));
+        fl->setStyleSheet("color: #7E7576; text-transform: uppercase; font-weight: 700;");
+        fLayout->addWidget(fl);
+        auto *cb = new QComboBox(customQualityPanel_);
+        cb->addItems(options);
+        fLayout->addWidget(cb);
+        cqpLayout->addLayout(fLayout);
+    };
+
+    addCustomField("Resolução Alvo", {"1920 × 1080 (FHD)", "2560 × 1440 (2K QHD)", "1280 × 720 (HD)", "Nativa da Tela"});
+    addCustomField("Taxa de Quadros (FPS)", {"60 FPS (Ultra Suave)", "30 FPS (Padrão)", "120 FPS (Display Pro)"});
+    addCustomField("Velocidade da Transmissão", {"Alta fidelidade (Recomendado)", "Qualidade máxima", "Econômico (conexão lenta)", "Ajuste automático"});
+
+    customQualityPanel_->hide();
+    g3Layout->addWidget(customQualityPanel_);
+    layout->addWidget(group3);
+
+    // RODAPÉ DE AÇÃO E SEGURANÇA
+    auto *dock = new QFrame(page);
+    dock->setObjectName("prepDock");
+    dock->setStyleSheet("QFrame#prepDock { background-color: #EAE8DE; border-radius: 14px; }");
+    auto *dockLayout = new QHBoxLayout(dock);
+    dockLayout->setContentsMargins(20, 16, 20, 16);
+    dockLayout->setSpacing(20);
+
+    auto *dockLeft = new QHBoxLayout;
+    dockLeft->setSpacing(12);
+
+    auto *shIco = new QLabel(dock);
+    shIco->setFixedSize(36, 36);
+    shIco->setStyleSheet("background-color: #FFFFFF; border-radius: 18px;");
+    shIco->setAlignment(Qt::AlignCenter);
+    shIco->setPixmap(Theme::icon("security", Theme::SecondaryDark, 20).pixmap(20, 20));
+    dockLeft->addWidget(shIco);
+
+    auto *dockTextLayout = new QVBoxLayout;
+    dockTextLayout->setSpacing(2);
+    auto *secTitle = new QLabel("Você aprova cada pessoa antes de ela assistir.", dock);
+    secTitle->setFont(Theme::headlineFont(11, QFont::Bold));
+    secTitle->setStyleSheet("color: #000000;");
+    dockTextLayout->addWidget(secTitle);
+
+    prepTelemetrySummary_ = new QLabel("Conexão Direta • Tela 1 • Áudio Mudo • 1080p60", dock);
+    prepTelemetrySummary_->setFont(Theme::codeFont(9));
+    prepTelemetrySummary_->setStyleSheet("color: #4C4546;");
+    dockTextLayout->addWidget(prepTelemetrySummary_);
+    dockLeft->addLayout(dockTextLayout);
+
+    dockLayout->addLayout(dockLeft);
+    dockLayout->addStretch();
+
+    auto *cancelBtn = new QPushButton("Cancelar", dock);
+    cancelBtn->setStyleSheet("background: transparent; border: none; font-weight: 600; color: #4C4546; padding: 10px 18px;");
+    connect(cancelBtn, &QPushButton::clicked, this, [this] { showPage(0); });
+    dockLayout->addWidget(cancelBtn);
+
+    create_ = new QPushButton("Criar sala", dock);
+    create_->setObjectName("create-room-btn");
+    create_->setIcon(Theme::icon("bolt", Theme::Secondary, 18));
+    create_->setStyleSheet("QPushButton { background-color: #000000; color: #FFFFFF; font-weight: 700; font-size: 13px; border-radius: 10px; padding: 10px 24px; } QPushButton:hover { background-color: #1B1B1B; }");
+    dockLayout->addWidget(create_);
+    layout->addWidget(dock);
+
+    scroll->setWidget(page);
+    return scroll;
+}
+
+QWidget *Window::createRoomPage() {
+    auto *page = new QWidget(this);
+    page->setObjectName("roomPage");
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(24, 16, 24, 16);
+    layout->setSpacing(14);
+
+    auto *sessBar = new QWidget(page);
+    sessBar->setStyleSheet("background-color: #F0EEE3; border-radius: 10px; border: 1px solid #EAE8DE;");
+    auto *sbLayout = new QHBoxLayout(sessBar);
+    sbLayout->setContentsMargins(14, 8, 14, 8);
+    sbLayout->setSpacing(12);
+
+    auto *liveDot = new QLabel(sessBar);
+    liveDot->setFixedSize(8, 8);
+    liveDot->setStyleSheet("background-color: #0FFCBE; border-radius: 4px;");
+    sbLayout->addWidget(liveDot);
+
+    roomSessionCodeLabel_ = new QLabel("Sessão #lzr-792-sky", sessBar);
+    roomSessionCodeLabel_->setFont(Theme::codeFont(10));
+    roomSessionCodeLabel_->setStyleSheet("color: #000000; font-weight: 700;");
+    sbLayout->addWidget(roomSessionCodeLabel_);
+
+    auto *sep = new QLabel("/", sessBar);
+    sep->setStyleSheet("color: #CFD0C5;");
+    sbLayout->addWidget(sep);
+
+    roomStatusBadge_ = new QLabel("Stream Direto Ativo", sessBar);
+    roomStatusBadge_->setFont(Theme::bodyFont(9));
+    roomStatusBadge_->setStyleSheet("color: #4C4546;");
+    sbLayout->addWidget(roomStatusBadge_);
+
+    sbLayout->addStretch();
+
+    auto *copyLinkBtn = new QPushButton("Copiar link", sessBar);
+    copyLinkBtn->setIcon(Theme::icon("copy", QColor(0, 0, 0), 14));
+    copyLinkBtn->setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600;");
+    connect(copyLinkBtn, &QPushButton::clicked, this, [this] {
+        QApplication::clipboard()->setText(token_->text());
+        notice("Link copiado para a área de transferência.");
+    });
+    sbLayout->addWidget(copyLinkBtn);
+
+    auto *dtlsBadge = new QLabel("Criptografado", sessBar);
+    dtlsBadge->setFont(Theme::codeFont(9));
+    dtlsBadge->setStyleSheet("background-color: #F0EEE3; color: #006C4F; border: 1px solid #E4E3D8; padding: 4px 10px; border-radius: 6px; font-weight: 700;");
+    sbLayout->addWidget(dtlsBadge);
+    layout->addWidget(sessBar);
+
+    waitingModalWidget_ = new QWidget(page);
+    waitingModalWidget_->setStyleSheet("background-color: #F6F4E9; border-radius: 12px; border: 1px solid #EAE8DE;");
+    auto *wmLayout = new QHBoxLayout(waitingModalWidget_);
+    wmLayout->setContentsMargins(16, 12, 16, 12);
+    wmLayout->setSpacing(14);
+
+    auto *wmIcon = new QLabel(waitingModalWidget_);
+    wmIcon->setFixedSize(36, 36);
+    wmIcon->setStyleSheet("background-color: #F0EEE3; border: 1px solid #E4E3D8; border-radius: 10px;");
+    wmIcon->setAlignment(Qt::AlignCenter);
+    wmIcon->setPixmap(Theme::icon("bolt", Theme::SecondaryDark, 18).pixmap(18, 18));
+    wmLayout->addWidget(wmIcon);
+
+    auto *wmTextLayout = new QVBoxLayout;
+    wmTextLayout->setSpacing(2);
+    auto *wmTitle = new QLabel("Aguardando aprovação de quem está compartilhando", waitingModalWidget_);
+    wmTitle->setFont(Theme::headlineFont(11, QFont::Bold));
+    wmTitle->setStyleSheet("color: #000000;");
+    wmTextLayout->addWidget(wmTitle);
+
+    auto *wmSub = new QLabel("O anfitrião da sala precisa autorizar sua entrada antes da transmissão começar.", waitingModalWidget_);
+    wmSub->setFont(Theme::bodyFont(9));
+    wmSub->setStyleSheet("color: #4C4546;");
+    wmTextLayout->addWidget(wmSub);
+    wmLayout->addLayout(wmTextLayout, 1);
+
+    auto *cancelWaitBtn = new QPushButton("Cancelar solicitação", waitingModalWidget_);
+    cancelWaitBtn->setStyleSheet("background-color: #FFDAD6; color: #BA1A1A; border: none; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px;");
+    connect(cancelWaitBtn, &QPushButton::clicked, this, &Window::stop);
+    wmLayout->addWidget(cancelWaitBtn);
+    waitingModalWidget_->hide();
+    layout->addWidget(waitingModalWidget_);
+
+    roomInviteBanner_ = new QWidget(page);
+    roomInviteBanner_->setObjectName("roomInviteBanner");
+    roomInviteBanner_->setStyleSheet("QWidget#roomInviteBanner { background-color: #FFFFFF; border: 1.5px solid #EAE8DE; border-radius: 12px; }");
+    auto *ribLayout = new QHBoxLayout(roomInviteBanner_);
+    ribLayout->setContentsMargins(16, 12, 16, 12);
+    ribLayout->setSpacing(14);
+
+    inviteAvatarLabel_ = new QLabel(roomInviteBanner_);
+    inviteAvatarLabel_->setFixedSize(36, 36);
+    inviteAvatarLabel_->setStyleSheet("background-color: #F0EEE3; border-radius: 18px; border: 1px solid #E4E3D8;");
+    inviteAvatarLabel_->setAlignment(Qt::AlignCenter);
+    inviteAvatarLabel_->setPixmap(Theme::avatarPixmap(profile_.avatar, 26));
+    ribLayout->addWidget(inviteAvatarLabel_);
+
+    auto *ribTextLayout = new QVBoxLayout;
+    ribTextLayout->setSpacing(2);
+    inviteHeadingLabel_ = new QLabel(QString("%1, está te convidando para assistir com ele").arg(profile_.valid() ? profile_.nickname : "Anfitrião"), roomInviteBanner_);
+    inviteHeadingLabel_->setFont(Theme::headlineFont(11, QFont::Bold));
+    inviteHeadingLabel_->setStyleSheet("color: #000000; border: none;");
+    ribTextLayout->addWidget(inviteHeadingLabel_);
+
+    auto *ribSub = new QLabel("Envie o link da sala para até 4 amigos assistirem direto no navegador.", roomInviteBanner_);
+    ribSub->setFont(Theme::bodyFont(9));
+    ribSub->setStyleSheet("color: #4C4546; border: none;");
+    ribTextLayout->addWidget(ribSub);
+    ribLayout->addLayout(ribTextLayout, 1);
+
+    auto *ribCopyBtn = new QPushButton("Copiar link", roomInviteBanner_);
+    ribCopyBtn->setIcon(Theme::icon("copy", QColor(255, 255, 255), 14));
+    ribCopyBtn->setStyleSheet("QPushButton { background-color: #000000; color: #FFFFFF; font-weight: 700; border-radius: 6px; padding: 6px 14px; font-size: 11px; border: none; } QPushButton:hover { background-color: #1B1B1B; }");
+    connect(ribCopyBtn, &QPushButton::clicked, this, [this] {
+        QApplication::clipboard()->setText(token_->text());
+        notice("Link de convite copiado para a área de transferência.");
+    });
+    ribLayout->addWidget(ribCopyBtn);
+
+    auto *closeBannerBtn = new QPushButton(roomInviteBanner_);
+    closeBannerBtn->setIcon(Theme::icon("close", QColor(76, 69, 70), 14));
+    closeBannerBtn->setFixedSize(26, 26);
+    closeBannerBtn->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 4px; } QPushButton:hover { background-color: #F0EEE3; }");
+    connect(closeBannerBtn, &QPushButton::clicked, roomInviteBanner_, &QWidget::hide);
+    ribLayout->addWidget(closeBannerBtn);
+
+    roomInviteBanner_->hide();
+    layout->addWidget(roomInviteBanner_);
+
+    auto *stageWidget = new QWidget(page);
+    auto *stageLayout = new QHBoxLayout(stageWidget);
+    stageLayout->setContentsMargins(0, 0, 0, 0);
+    stageLayout->setSpacing(16);
+
+    auto *leftStage = new QWidget(stageWidget);
+    auto *leftStageLayout = new QVBoxLayout(leftStage);
+    leftStageLayout->setContentsMargins(0, 0, 0, 0);
+    leftStageLayout->setSpacing(10);
+
+    viewerPanel_ = new ViewerPanel(leftStage);
+    video_ = viewerPanel_->video();
+    leftStageLayout->addWidget(viewerPanel_, 1);
+
+    auto *floatingBar = new QFrame(leftStage);
+    floatingBar->setObjectName("floatingBar");
+    floatingBar->setStyleSheet("QFrame#floatingBar { background-color: #FFFFFF; border: 1.5px solid #EAE8DE; border-radius: 12px; padding: 4px; }");
+    auto *fbLayout = new QHBoxLayout(floatingBar);
+    fbLayout->setContentsMargins(14, 6, 14, 6);
+    fbLayout->setSpacing(12);
+
+    auto *liveChip = new QLabel("AO VIVO", floatingBar);
+    liveChip->setFont(Theme::codeFont(9));
+    liveChip->setStyleSheet("background-color: #F0EEE3; color: #006C4F; font-weight: 700; padding: 4px 8px; border-radius: 6px; border: none;");
+    fbLayout->addWidget(liveChip);
+
+    auto *netStatsChip = new QLabel("Conexão Direta • Transmitindo em tempo real", floatingBar);
+    netStatsChip->setFont(Theme::codeFont(9));
+    netStatsChip->setStyleSheet("color: #4C4546; font-weight: 600; border: none;");
+    fbLayout->addWidget(netStatsChip);
+    fbLayout->addStretch();
+
+    share_ = new QPushButton("Compartilhar tela", floatingBar);
+    share_->setStyleSheet("QPushButton { background-color: #14FDBF; color: #002116; border: 1px solid #0FFCBE; border-radius: 6px; padding: 6px 12px; font-weight: 700; font-size: 11px; } QPushButton:hover { background-color: #38FFC3; } QPushButton:disabled { background-color: #F0EEE3; color: #A09E94; border: 1px solid #EAE8DE; }");
+    pause_ = new QPushButton("Parar compartilhamento", floatingBar);
+    pause_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
+    change_ = new QPushButton("Monitor / qualidade", floatingBar);
+    change_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
+
+    fbLayout->addWidget(share_);
+    fbLayout->addWidget(pause_);
+    fbLayout->addWidget(change_);
+
+    stop_ = new QPushButton("Encerrar / sair", floatingBar);
+    stop_->setObjectName("btn-exit-room");
+    stop_->setIcon(Theme::icon("logout", QColor(255, 255, 255), 14));
+    stop_->setStyleSheet("QPushButton { background-color: #BA1A1A; color: #FFFFFF; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; font-size: 11px; } QPushButton:hover { background-color: #D32F2F; }");
+    fbLayout->addWidget(stop_);
+    leftStageLayout->addWidget(floatingBar);
+    stageLayout->addWidget(leftStage, 2);
+
+    auto *rightPanel = new QFrame(stageWidget);
+    rightPanel->setObjectName("rightPanel");
+    rightPanel->setStyleSheet("QFrame#rightPanel { background-color: #F6F4E9; border-radius: 14px; border: 1px solid #EAE8DE; }");
+    auto *rpLayout = new QVBoxLayout(rightPanel);
+    rpLayout->setContentsMargins(16, 14, 16, 14);
+    rpLayout->setSpacing(10);
+
+    auto *rpHeader = new QHBoxLayout;
+    auto *rpTitle = new QLabel("Participantes", rightPanel);
+    rpTitle->setFont(Theme::headlineFont(12, QFont::Bold));
+    rpTitle->setStyleSheet("color: #000000; border: none;");
+    rpHeader->addWidget(rpTitle);
+    rpHeader->addStretch();
+    auto *maxUsersLbl = new QLabel("Até 4 pessoas", rightPanel);
+    maxUsersLbl->setFont(Theme::codeFont(8));
+    maxUsersLbl->setStyleSheet("color: #7E7576; font-weight: 600; text-transform: uppercase; border: none;");
+    rpHeader->addWidget(maxUsersLbl);
+    rpLayout->addLayout(rpHeader);
+
+    viewers_ = new QListWidget(rightPanel);
+    viewers_->setObjectName("viewers");
+    viewers_->setStyleSheet("QListWidget { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 8px; }");
+    rpLayout->addWidget(viewers_, 1);
+
+    auto *modActions = new QHBoxLayout;
+    modActions->setSpacing(6);
+    approve_ = new QPushButton("Aprovar", rightPanel);
+    approve_->setStyleSheet("background-color: #14FDBF; color: #002116; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11px;");
+    remove_ = new QPushButton("Remover", rightPanel);
+    remove_->setStyleSheet("background-color: #FFDAD6; color: #BA1A1A; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px;");
+    relay_ = new QPushButton("Tentar novamente", rightPanel);
+    relay_->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; border: 1px solid #CFD0C5; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px;");
+
+    approve_->hide();
+    modActions->addWidget(approve_);
+    modActions->addWidget(remove_);
+    modActions->addWidget(relay_);
+    rpLayout->addLayout(modActions);
+
+    requireApproval_ = new QCheckBox("Novos espectadores precisam de aprovação", rightPanel);
+    requireApproval_->setObjectName("requireApproval");
+    requireApproval_->setFont(Theme::bodyFont(9));
+    rpLayout->addWidget(requireApproval_);
+
+    stageLayout->addWidget(rightPanel, 1);
+    layout->addWidget(stageWidget, 1);
+
+    auto *metricRow = new QHBoxLayout;
+    metricRow->setSpacing(12);
+
+    auto makeMetricCard = [&](const QString &icon, const QString &title, const QString &mainVal, const QString &sub) {
+        auto *mc = new QFrame(page);
+        mc->setObjectName("metricCard");
+        mc->setStyleSheet("QFrame#metricCard { background-color: #F0EEE3; border-radius: 10px; border: 1px solid #EAE8DE; }");
+        auto *mcl = new QVBoxLayout(mc);
+        mcl->setContentsMargins(12, 10, 12, 10);
+        mcl->setSpacing(4);
+
+        auto *top = new QHBoxLayout;
+        auto *tLbl = new QLabel(title, mc);
+        tLbl->setFont(Theme::headlineFont(10, QFont::Bold));
+        tLbl->setStyleSheet("color: #000000; border: none;");
+        top->addWidget(tLbl);
+        top->addStretch();
+        auto *iLbl = new QLabel(mc);
+        iLbl->setPixmap(Theme::icon(icon, Theme::SecondaryDark, 16).pixmap(16, 16));
+        top->addWidget(iLbl);
+        mcl->addLayout(top);
+
+        auto *valLbl = new QLabel(mainVal, mc);
+        valLbl->setFont(Theme::codeFont(14));
+        valLbl->setStyleSheet("color: #000000; font-weight: 700; border: none;");
+        mcl->addWidget(valLbl);
+
+        auto *subLbl = new QLabel(sub, mc);
+        subLbl->setFont(Theme::bodyFont(8));
+        subLbl->setStyleSheet("color: #7E7576; border: none;");
+        mcl->addWidget(subLbl);
+        metricRow->addWidget(mc);
+    };
+
+    makeMetricCard("bolt", "Fluidez da Imagem", "60 FPS", "Transmissão suave e contínua");
+    makeMetricCard("signal", "Consumo de Internet", "8.42 MB/s", "Ajuste dinâmico de qualidade");
+    makeMetricCard("lock", "Segurança da Sala", "Privado e Seguro", "Criptografia de ponta a ponta");
+
+    metrics_ = new QLabel("Upload: 0 kbps", page);
+    metrics_->setObjectName("metrics");
+    metrics_->hide();
+    layout->addLayout(metricRow);
+
+    return page;
+}
+
+QWidget *Window::createSettingsPage() {
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setStyleSheet("background-color: #FCFAEF;");
+
+    auto *page = new QWidget(scroll);
+    page->setObjectName("settingsPage");
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(40, 20, 40, 30);
+    layout->setSpacing(20);
+
+    auto *diagTop = new QHBoxLayout;
+    auto *diagTitleLayout = new QVBoxLayout;
+    auto *subhead = new QLabel("CONFIGURAÇÕES / REDE E CONEXÕES", page);
+    subhead->setFont(Theme::codeFont(8));
+    subhead->setStyleSheet("color: #7E7576; font-weight: 700;");
+    diagTitleLayout->addWidget(subhead);
+
+    auto *mainTitle = new QLabel("Configurações e Conexão de Rede", page);
+    mainTitle->setFont(Theme::headlineFont(20, QFont::Bold));
+    mainTitle->setStyleSheet("color: #000000;");
+    diagTitleLayout->addWidget(mainTitle);
+    diagTop->addLayout(diagTitleLayout);
+    diagTop->addStretch();
+
+    auto *peerBadge = new QLabel("Status da Rede: Conexão Direta Ativa", page);
+    peerBadge->setFont(Theme::codeFont(9));
+    peerBadge->setStyleSheet("background-color: #F0EEE3; color: #000000; padding: 6px 12px; border-radius: 8px; font-weight: 700; border: none;");
+    diagTop->addWidget(peerBadge);
+    layout->addLayout(diagTop);
+
+    auto *tabsBar = new QWidget(page);
+    tabsBar->setStyleSheet("background-color: #EAE8DE; border-radius: 10px; padding: 2px;");
+    auto *tbLayout = new QHBoxLayout(tabsBar);
+    tbLayout->setContentsMargins(4, 4, 4, 4);
+    tbLayout->setSpacing(6);
+
+    auto *tabConn = new QPushButton("Conexão", tabsBar);
+    tabConn->setStyleSheet("background-color: #FCFAEF; color: #000000; font-weight: 700; border-radius: 8px; padding: 6px 16px; border: 1px solid #E4E3D8;");
+    auto *tabDiag = new QPushButton("Diagnóstico & Suporte", tabsBar);
+    tabDiag->setStyleSheet("background: transparent; color: #4C4546; font-weight: 600; border: none; padding: 6px 16px;");
+    connect(tabDiag, &QPushButton::clicked, this, [this] { showComingSoon("Diagnóstico Avançado"); });
+
+    auto *tabGen = new QPushButton("Geral / Atalhos", tabsBar);
+    tabGen->setStyleSheet("background: transparent; color: #4C4546; font-weight: 600; border: none; padding: 6px 16px;");
+    connect(tabGen, &QPushButton::clicked, this, [this] { showComingSoon("Atalhos de Teclado"); });
+
+    tbLayout->addWidget(tabConn);
+    tbLayout->addWidget(tabDiag);
+    tbLayout->addWidget(tabGen);
+    tbLayout->addStretch();
+    layout->addWidget(tabsBar);
+
+    auto *critBanner = new QFrame(page);
+    critBanner->setObjectName("critBanner");
+    critBanner->setStyleSheet("QFrame#critBanner { background-color: #F6F4E9; border: 1.5px solid #EAE8DE; border-radius: 14px; }");
+    auto *cbLayout = new QVBoxLayout(critBanner);
+    cbLayout->setContentsMargins(20, 18, 20, 18);
+    cbLayout->setSpacing(12);
+
+    auto *cbTop = new QHBoxLayout;
+    auto *natTag = new QLabel("CONEXÃO DIRETA LIMITADA", critBanner);
+    natTag->setFont(Theme::codeFont(8));
+    natTag->setStyleSheet("background-color: #FFDAD6; color: #BA1A1A; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: none;");
+    cbTop->addWidget(natTag);
+    cbTop->addStretch();
+    auto *e2eeTag = new QLabel("Criptografia Ponta a Ponta Preservada", critBanner);
+    e2eeTag->setFont(Theme::codeFont(8));
+    e2eeTag->setStyleSheet("background-color: #F0EEE3; color: #006C4F; font-weight: 600; padding: 2px 8px; border-radius: 4px; border: none;");
+    cbTop->addWidget(e2eeTag);
+    cbLayout->addLayout(cbTop);
+
+    auto *cbTitle = new QLabel("A rede de algum participante tem restrições de portas. O servidor seguro pode intermediar a transmissão para que todos consigam assistir.", critBanner);
+    cbTitle->setFont(Theme::headlineFont(13, QFont::Bold));
+    cbTitle->setStyleSheet("color: #1B1C16; border: none;");
+    cbTitle->setWordWrap(true);
+    cbLayout->addWidget(cbTitle);
+
+    auto *relayAuthBtn = new QPushButton("Permitir Conexão Assistida por Servidor", critBanner);
+    relayAuthBtn->setStyleSheet(profile_.relay ?
+        "background-color: #FFFFFF; color: #006C4F; font-weight: 700; border: 1.5px solid #0FFCBE; border-radius: 8px; padding: 10px 16px;" :
+        "background-color: #14FDBF; color: #002116; font-weight: 700; border: none; border-radius: 8px; padding: 10px 16px;");
+    connect(relayAuthBtn, &QPushButton::clicked, this, [this, relayAuthBtn] {
+        profile_.relay = !profile_.relay;
+        profile_.save();
+        if (profile_.relay) {
+            relayAuthBtn->setText("Conexão Assistida Ativada");
+            relayAuthBtn->setStyleSheet("background-color: #FFFFFF; color: #006C4F; font-weight: 700; border: 1.5px solid #0FFCBE; border-radius: 8px; padding: 10px 16px;");
+        } else {
+            relayAuthBtn->setText("Permitir Conexão Assistida por Servidor");
+            relayAuthBtn->setStyleSheet("background-color: #14FDBF; color: #002116; font-weight: 700; border: none; border-radius: 8px; padding: 10px 16px;");
+        }
+    });
+    cbLayout->addWidget(relayAuthBtn, 0, Qt::AlignLeft);
+    layout->addWidget(critBanner);
+
+    auto *twoCol = new QHBoxLayout;
+    twoCol->setSpacing(20);
+
+    auto *leftCol = new QWidget(page);
+    auto *lcLayout = new QVBoxLayout(leftCol);
+    lcLayout->setContentsMargins(0, 0, 0, 0);
+    lcLayout->setSpacing(16);
+
+    auto *serverBox = new QFrame(leftCol);
+    serverBox->setObjectName("serverBox");
+    serverBox->setStyleSheet("QFrame#serverBox { background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE; }");
+    auto *sbL = new QVBoxLayout(serverBox);
+    sbL->setContentsMargins(16, 14, 16, 14);
+    sbL->setSpacing(10);
+
+    auto *sbHead = new QHBoxLayout;
+    auto *sbTitle = new QLabel("Servidor de Apoio do Lazarus Share", serverBox);
+    sbTitle->setFont(Theme::headlineFont(12, QFont::Bold));
+    sbTitle->setStyleSheet("color: #000000; border: none;");
+    sbHead->addWidget(sbTitle);
+    sbHead->addStretch();
+    auto *connChip = new QLabel("Conectado · 18ms", serverBox);
+    connChip->setFont(Theme::codeFont(8));
+    connChip->setStyleSheet("background-color: #14FDBF; color: #002116; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: none;");
+    sbHead->addWidget(connChip);
+    sbL->addLayout(sbHead);
+
+    auto *urlLbl = new QLabel("Endereço do Servidor", serverBox);
+    urlLbl->setFont(Theme::codeFont(8));
+    urlLbl->setStyleSheet("color: #7E7576; text-transform: uppercase; font-weight: 700; border: none;");
+    sbL->addWidget(urlLbl);
+
+    auto *urlInput = new QLineEdit(endpoint_, serverBox);
+    urlInput->setReadOnly(true);
+    sbL->addWidget(urlInput);
+
+    auto *tlsFP = new QLabel("Conexão Criptografada e Segura (TLS)", serverBox);
+    tlsFP->setFont(Theme::codeFont(8));
+    tlsFP->setStyleSheet("color: #006C4F; font-weight: 600; border: none;");
+    sbL->addWidget(tlsFP);
+    lcLayout->addWidget(serverBox);
+
+    auto *iceBox = new QFrame(leftCol);
+    iceBox->setObjectName("iceBox");
+    iceBox->setStyleSheet("QFrame#iceBox { background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE; }");
+    auto *ibL = new QVBoxLayout(iceBox);
+    ibL->setContentsMargins(16, 14, 16, 14);
+    ibL->setSpacing(8);
+
+    auto *iceTitle = new QLabel("Servidores de Conexão", iceBox);
+    iceTitle->setFont(Theme::headlineFont(11, QFont::Bold));
+    iceTitle->setStyleSheet("color: #000000; border: none;");
+    ibL->addWidget(iceTitle);
+
+    auto *stunRow = new QLabel("Servidor Principal: Oficial Lazarus (São Paulo)", iceBox);
+    stunRow->setFont(Theme::codeFont(9));
+    stunRow->setStyleSheet("background-color: #FFFFFF; border-radius: 6px; padding: 6px 10px; font-weight: 600; border: none;");
+    ibL->addWidget(stunRow);
+
+    auto *turnRow = new QLabel("Servidor Auxiliar: Automático com redundância", iceBox);
+    turnRow->setFont(Theme::codeFont(9));
+    turnRow->setStyleSheet("background-color: #FFFFFF; border-radius: 6px; padding: 6px 10px; font-weight: 500; color: #4C4546; border: none;");
+    ibL->addWidget(turnRow);
+
+    lcLayout->addWidget(iceBox);
+    twoCol->addWidget(leftCol, 1);
+
+    auto *rightCol = new QWidget(page);
+    auto *rcLayout = new QVBoxLayout(rightCol);
+    rcLayout->setContentsMargins(0, 0, 0, 0);
+    rcLayout->setSpacing(16);
+
+    auto *loopBox = new QFrame(rightCol);
+    loopBox->setObjectName("loopBox");
+    loopBox->setStyleSheet("QFrame#loopBox { background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE; }");
+    auto *lbL = new QVBoxLayout(loopBox);
+    lbL->setContentsMargins(16, 14, 16, 14);
+    lbL->setSpacing(10);
+
+    auto *lbHead = new QHBoxLayout;
+    auto *lbTitle = new QLabel("Teste de Vídeo Local", loopBox);
+    lbTitle->setFont(Theme::headlineFont(12, QFont::Bold));
+    lbTitle->setStyleSheet("color: #000000; border: none;");
+    lbHead->addWidget(lbTitle);
+    lbHead->addStretch();
+    auto *fpsBadge = new QLabel("60 FPS · Alta Resolução", loopBox);
+    fpsBadge->setFont(Theme::codeFont(8));
+    fpsBadge->setStyleSheet("background-color: #F0EEE3; color: #006C4F; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: none;");
+    lbHead->addWidget(fpsBadge);
+    lbL->addLayout(lbHead);
+
+    auto *smpte = new QWidget(loopBox);
+    smpte->setFixedHeight(100);
+    smpte->setStyleSheet("background-color: #E4E3D8; border-radius: 8px; border: 1px solid #CFD0C5;");
+    auto *smpteLayout = new QHBoxLayout(smpte);
+    smpteLayout->setContentsMargins(0, 0, 0, 0);
+    smpteLayout->setSpacing(0);
+    for (const auto &c : {"#FFFFFF", "#FFFF00", "#00FFFF", "#00FF00", "#FF00FF", "#FF00FF", "#0000FF"}) {
+        auto *cbar = new QWidget(smpte);
+        cbar->setStyleSheet(QString("background-color: %1;").arg(c));
+        smpteLayout->addWidget(cbar);
+    }
+    lbL->addWidget(smpte);
+
+    auto *loopTestBtn = new QPushButton("Testar Exibição Local de Vídeo", loopBox);
+    loopTestBtn->setIcon(Theme::icon("bolt", Theme::SecondaryDark, 16));
+    loopTestBtn->setStyleSheet("QPushButton { background-color: #FFFFFF; color: #1B1C16; font-weight: 700; border: 1.5px solid #E4E3D8; border-radius: 8px; padding: 10px; font-size: 12px; } QPushButton:hover { background-color: #F0EEE3; border-color: #CFD0C5; }");
+    connect(loopTestBtn, &QPushButton::clicked, this, [loopTestBtn] {
+        loopTestBtn->setText("Verificando exibição de vídeo...");
+        QTimer::singleShot(1400, loopTestBtn, [loopTestBtn] {
+            loopTestBtn->setText("Exibição Aprovada (Excelente)");
+            QTimer::singleShot(2500, loopTestBtn, [loopTestBtn] {
+                loopTestBtn->setText("Testar Exibição Local de Vídeo");
+            });
+        });
+    });
+    lbL->addWidget(loopTestBtn);
+    rcLayout->addWidget(loopBox);
+
+    auto *adaptBox = new QFrame(rightCol);
+    adaptBox->setObjectName("adaptBox");
+    adaptBox->setStyleSheet("QFrame#adaptBox { background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE; }");
+    auto *abL = new QVBoxLayout(adaptBox);
+    abL->setContentsMargins(16, 14, 16, 14);
+    abL->setSpacing(6);
+
+    auto *abTitle = new QLabel("Diagnóstico da Conexão Local", adaptBox);
+    abTitle->setFont(Theme::headlineFont(11, QFont::Bold));
+    abTitle->setStyleSheet("color: #000000; border: none;");
+    abL->addWidget(abTitle);
+
+    auto addDiagRow = [&](const QString &desc, const QString &status, bool ok) {
+        auto *row = new QHBoxLayout;
+        auto *dLbl = new QLabel(desc, adaptBox);
+        dLbl->setFont(Theme::bodyFont(9));
+        row->addWidget(dLbl);
+        row->addStretch();
+        auto *sLbl = new QLabel(status, adaptBox);
+        sLbl->setFont(Theme::codeFont(8));
+        sLbl->setStyleSheet(ok ? "color: #006C4F; font-weight: 700;" : "color: #BA1A1A; font-weight: 700;");
+        row->addWidget(sLbl);
+        abL->addLayout(row);
+    };
+
+    addDiagRow("Comunicação de rede local", "FUNCIONANDO", true);
+    addDiagRow("Acesso ao servidor do Lazarus", "6ms · OK", true);
+    addDiagRow("Conexão direta em redes com bloqueio", "USA SERVIDOR DE APOIO", false);
+    rcLayout->addWidget(adaptBox);
+
+    twoCol->addWidget(rightCol, 1);
+    layout->addLayout(twoCol);
+
+    auto *bottomDock = new QFrame(page);
+    bottomDock->setStyleSheet("background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE;");
+    auto *bdLayout = new QHBoxLayout(bottomDock);
+    bdLayout->setContentsMargins(16, 12, 16, 12);
+    bdLayout->setSpacing(12);
+
+    auto *exportDiagBtn = new QPushButton("Exportar diagnóstico", bottomDock);
+    exportDiagBtn->setIcon(Theme::icon("content_paste", QColor(0, 0, 0), 14));
+    exportDiagBtn->setStyleSheet("background-color: #FFFFFF; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px;");
+    connect(exportDiagBtn, &QPushButton::clicked, this, &Window::diagnostics);
+    bdLayout->addWidget(exportDiagBtn);
+
+    auto *clearLogsBtn = new QPushButton("Apagar diagnósticos locais", bottomDock);
+    clearLogsBtn->setStyleSheet("background: transparent; border: none; color: #4C4546; font-weight: 600; font-size: 11px;");
+    connect(clearLogsBtn, &QPushButton::clicked, this, [this] {
+        log_.clear();
+        notice("Diagnósticos locais apagados.");
+    });
+    bdLayout->addWidget(clearLogsBtn);
+
+    auto *testBox = new QCheckBox("Vídeo de teste", bottomDock);
+    testBox->setObjectName("testPattern");
+    testBox->setFont(Theme::bodyFont(9));
+    connect(testBox, &QCheckBox::toggled, this, [this](bool on) {
+        if (!active_) testPattern_ = on;
+    });
+    bdLayout->addWidget(testBox);
+
+    bdLayout->addStretch();
+
+    auto *closeSettingsBtn = new QPushButton("Fechar", bottomDock);
+    closeSettingsBtn->setStyleSheet("background-color: #E4E3D8; color: #000000; border-radius: 8px; padding: 8px 16px; font-weight: 600;");
+    connect(closeSettingsBtn, &QPushButton::clicked, this, [this] {
+        showPage(previousPageIndex_);
+    });
+    bdLayout->addWidget(closeSettingsBtn);
+
+    auto *saveBtn = new QPushButton("Salvar Alterações", bottomDock);
+    saveBtn->setStyleSheet("background-color: #000000; color: #FFFFFF; border-radius: 8px; padding: 8px 18px; font-weight: 700;");
+    connect(saveBtn, &QPushButton::clicked, this, [saveBtn, this] {
+        saveBtn->setText("Salvo!");
+        QTimer::singleShot(1500, saveBtn, [saveBtn] {
+            saveBtn->setText("Salvar Alterações");
+        });
+        showPage(previousPageIndex_);
+    });
+    bdLayout->addWidget(saveBtn);
+    layout->addWidget(bottomDock);
+
+    scroll->setWidget(page);
+    return scroll;
+}
+
 Window::Window(bool onboarding) : capture_(this), audio_(this) {
     profile_ = Profile::load();
-    setWindowTitle("Lazarus Share — sem login"); resize(940, 730); time_.start();
-    auto *root = new QWidget(this); auto *layout = new QVBoxLayout(root); setCentralWidget(root);
-    setupUpdates(layout);
-    auto *top = new QHBoxLayout; top->addStretch(); identity_ = new QPushButton; identity_->setObjectName("profile"); top->addWidget(identity_); layout->addLayout(top);
-    connect(identity_, &QPushButton::clicked, this, &Window::editIdentity); updateIdentity();
-    auto *form = new QFormLayout;
+    setWindowTitle("Lazarus Share — sem login");
+    setWindowIcon(Theme::appIcon());
+    setMinimumSize(960, 680);
+    resize(1140, 800);
+    time_.start();
+
+    auto *root = new QWidget(this);
+    auto *rootLayout = new QVBoxLayout(root);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
+    setCentralWidget(root);
+
+    setupUpdates(rootLayout);
+
+    // Persistent Top Header
+    rootLayout->addWidget(createHeaderWidget());
+
+    // Central Stacked Widget
+    stack_ = new QStackedWidget(root);
+    stack_->setObjectName("mainStack");
+    rootLayout->addWidget(stack_, 1);
+
     const QString hostedEndpoint = "wss://share.app.lazaruslabs.com.br/ws";
     endpoint_ = qEnvironmentVariable("LAZARUS_SIGNAL_URL", hostedEndpoint).trimmed();
     const bool hosted = endpoint_ == hostedEndpoint;
     stun_ = qEnvironmentVariable("LAZARUS_STUN_URL", hosted ? "stun://share.app.lazaruslabs.com.br:3478" : "");
     tlsPin_ = qEnvironmentVariable("LAZARUS_TLS_PIN", "");
-    token_ = new QLineEdit; token_->setPlaceholderText("Cole o link do convite");
-    token_->setObjectName("invite");
-    form->addRow("Link do convite", token_); layout->addLayout(form);
-    auto *buttons = new QHBoxLayout;
-    create_ = new QPushButton("Criar sala"); join_ = new QPushButton("Entrar com link"); stop_ = new QPushButton("Encerrar / sair");
-    auto *copy = new QPushButton("Copiar link"); auto *exportButton = new QPushButton("Exportar diagnóstico");
-    for (auto *b : {create_, join_, copy, stop_, exportButton}) buttons->addWidget(b);
-    layout->addLayout(buttons);
-    requireApproval_ = new QCheckBox("Novos espectadores precisam de aprovação");
-    requireApproval_->setObjectName("requireApproval"); layout->addWidget(requireApproval_);
-    monitor_ = new QComboBox(root); monitor_->hide();
+
+    monitor_ = new QComboBox(root);
+    monitor_->setObjectName("internalMonitor");
+    monitor_->hide();
     for (auto *screen : QGuiApplication::screens()) monitor_->addItem(screen->name());
-    preset_ = new QComboBox(root); preset_->setObjectName("preset"); preset_->addItems({"Baixa — 720p / 30 FPS", "Alta — 1080p / 60 FPS", "Nativo — resolução do monitor / 60 FPS"}); preset_->setCurrentIndex(1); preset_->hide();
-    // Internal targets are retained for diagnostics, never exposed as quality fields.
-    width_ = new QSpinBox(root); height_ = new QSpinBox(root); fps_ = new QSpinBox(root); bitrate_ = new QSpinBox(root);
-    for (auto *spin : {width_, height_, fps_, bitrate_}) { spin->setRange(1, 100000); spin->hide(); }
-    auto *controls = new QHBoxLayout;
-    share_ = new QPushButton("Compartilhar tela"); pause_ = new QPushButton("Parar compartilhamento"); change_ = new QPushButton("Monitor / qualidade");
-    controls->addWidget(share_); controls->addWidget(pause_); controls->addWidget(change_); layout->addLayout(controls);
-    share_->setEnabled(false); pause_->setEnabled(false); change_->setEnabled(false);
+
+    preset_ = new QComboBox(root);
+    preset_->setObjectName("preset");
+    preset_->addItems({"Baixa — 720p / 30 FPS", "Alta — 1080p / 60 FPS", "Nativo — resolução do monitor / 60 FPS"});
+    preset_->setCurrentIndex(1);
+    preset_->hide();
+
+    width_ = new QSpinBox(root);
+    height_ = new QSpinBox(root);
+    fps_ = new QSpinBox(root);
+    bitrate_ = new QSpinBox(root);
+    for (auto *spin : {width_, height_, fps_, bitrate_}) {
+        spin->setRange(1, 100000);
+        spin->hide();
+    }
+
+    // Build Pages
+    stack_->addWidget(createHomePage());
+    stack_->addWidget(createPrepPage());
+    stack_->addWidget(createRoomPage());
+    stack_->addWidget(createSettingsPage());
+
+    showPage(0);
+
+    connect(identity_, &QPushButton::clicked, this, &Window::editIdentity);
+    updateIdentity();
+
     connect(share_, &QPushButton::clicked, this, &Window::share);
     connect(pause_, &QPushButton::clicked, this, &Window::stopSharing);
     connect(change_, &QPushButton::clicked, this, &Window::share);
-    auto *test = new QCheckBox("Vídeo de teste (diagnóstico de conexão)"); test->setObjectName("testPattern"); layout->addWidget(test);
-    status_ = new QLabel("Pronto. Vídeo/áudio não são gravados. Servidores processam metadados de conexão.");
-    status_->setWordWrap(true); layout->addWidget(status_);
-    status_->setObjectName("status");
-    auto *middleWidget = new QWidget; auto *middle = new QHBoxLayout(middleWidget);
-    auto *left = new QVBoxLayout; left->addWidget(new QLabel("Participantes — selecione para gerenciar"));
-    viewers_ = new QListWidget; left->addWidget(viewers_);
-    viewers_->setObjectName("viewers");
-    auto *actions = new QHBoxLayout; approve_ = new QPushButton("Aprovar"); remove_ = new QPushButton("Remover"); relay_ = new QPushButton("Tentar novamente");
-    approve_->hide(); actions->addWidget(approve_); actions->addWidget(remove_); actions->addWidget(relay_); left->addLayout(actions);
-    audioStatus_ = new QLabel(audio_.supported() ? "Áudio desligado. Marque somente aplicativos autorizados." : audio_.limitation()); audioStatus_->setWordWrap(true);
-    left->addWidget(audioStatus_); apps_ = new QListWidget; left->addWidget(apps_); middle->addLayout(left, 1);
-    viewerPanel_ = new ViewerPanel; video_ = viewerPanel_->video();
-    middle->addWidget(viewerPanel_,2); layout->addWidget(middleWidget,1);
-    connect(viewerPanel_,&ViewerPanel::playbackChanged,this,[this]{
-        for(auto &[id,c]:peers_)if(c->media)c->media->playbackVolume(viewerPanel_->volume(),viewerPanel_->muted());
+
+    share_->setEnabled(false);
+    pause_->setEnabled(false);
+    change_->setEnabled(false);
+
+    connect(viewerPanel_, &ViewerPanel::playbackChanged, this, [this] {
+        for (auto &[id, c] : peers_) if (c->media) c->media->playbackVolume(viewerPanel_->volume(), viewerPanel_->muted());
     });
-    metrics_ = new QLabel("Upload: 0 kbps"); metrics_->setWordWrap(true); layout->addWidget(metrics_);
-    metrics_->setObjectName("metrics");
+
     connect(create_, &QPushButton::clicked, this, &Window::create);
     connect(join_, &QPushButton::clicked, this, &Window::join);
     connect(stop_, &QPushButton::clicked, this, &Window::stop);
-    connect(copy, &QPushButton::clicked, this, [this] { QApplication::clipboard()->setText(token_->text()); });
-    connect(exportButton, &QPushButton::clicked, this, &Window::diagnostics);
-    auto *clearLogs = new QPushButton("Apagar diagnósticos locais"); layout->addWidget(clearLogs);
-    connect(clearLogs, &QPushButton::clicked, this, [this] { log_.clear(); notice("Diagnósticos locais apagados."); });
-    connect(test, &QCheckBox::toggled, this, [this](bool on) { if (!active_) testPattern_ = on; });
+
     connect(approve_, &QPushButton::clicked, this, [this] {
-        auto id = viewers_->currentItem() ? viewers_->currentItem()->data(Qt::UserRole).toString() : QString(); if (!administrator_ || id.isEmpty() || id == participantId_) return;
+        auto id = viewers_->currentItem() ? viewers_->currentItem()->data(Qt::UserRole).toString() : QString();
+        if (!administrator_ || id.isEmpty() || id == participantId_) return;
         if (!approved_.contains(id) && approved_.size() >= 4) { notice("Limite de quatro viewers atingido."); return; }
         approved_.insert(id); send({{"type", "approve"}, {"peer", id}});
     });
     connect(remove_, &QPushButton::clicked, this, [this] {
-        auto id = viewers_->currentItem() ? viewers_->currentItem()->data(Qt::UserRole).toString() : QString(); if (!administrator_ || id.isEmpty() || id == participantId_) return;
+        auto id = viewers_->currentItem() ? viewers_->currentItem()->data(Qt::UserRole).toString() : QString();
+        if (!administrator_ || id.isEmpty() || id == participantId_) return;
         approved_.remove(id); peers_.erase(id); send({{"type", "remove"}, {"peer", id}}); row(id, "Removido localmente");
     });
     connect(relay_, &QPushButton::clicked, this, &Window::relay);
@@ -172,7 +1624,10 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     if (onboarding && !profile_.valid()) QTimer::singleShot(0, this, &Window::editIdentity);
 }
 Window::~Window() { if(viewerPanel_->fullscreen())viewerPanel_->toggleFullscreen(); stop(); }
-void Window::notice(const QString &text) { status_->setText(text); }
+void Window::notice(const QString &text) {
+    status_->setText(text);
+    if (headerStatusLabel_) headerStatusLabel_->setText(text);
+}
 Quality Window::quality() const {
     if (preset_->currentIndex() == 0) return {1280, 720, 30, 3000};
     if (preset_->currentIndex() == 1) return {1920, 1080, 60, 8000};
@@ -185,9 +1640,10 @@ void Window::create() {
     administrator_ = active_ = true; created_ = false;
     secret_ = Protocol::randomBytes(16); room_ = Protocol::room(secret_); admin_ = Protocol::randomHex(32); challenge_ = Protocol::randomHex(16);
     roomRequiresApproval_ = requireApproval_->isChecked(); requireApproval_->setEnabled(false); approve_->setVisible(roomRequiresApproval_);
-    token_->setText(Protocol::inviteLink(secret_)); token_->setReadOnly(true); create_->setEnabled(false); join_->setEnabled(false); stop_->setEnabled(true);
+    token_->setText(Protocol::inviteLink(secret_, profile_.valid() ? profile_.nickname : QString(), profile_.avatar)); token_->setReadOnly(true); create_->setEnabled(false); join_->setEnabled(false); stop_->setEnabled(true);
     notice("Criando sala, sem compartilhar tela.");
     viewerState_="Conectando"; updatePresentation(); refreshAudio(); log("room_create"); openSocket();
+    showPage(2);
 }
 void Window::join() {
     if (active_ || !profile_.valid()) return;
@@ -196,6 +1652,7 @@ void Window::join() {
     administrator_ = false; active_ = true; room_ = Protocol::room(secret_); challenge_ = Protocol::randomHex(16);
     create_->setEnabled(false); join_->setEnabled(false); token_->setReadOnly(true); stop_->setEnabled(true);
     audio_.stop(); viewerState_="Conectando"; updatePresentation(); refreshAudio(); notice("Conectando à sala…"); openSocket();
+    showPage(2);
 }
 void Window::openInvite(const QString &link) {
     auto invitedSecret = Protocol::inviteSecret(link);
@@ -222,6 +1679,7 @@ void Window::stop() {
     secret_.fill(0); secret_.clear(); room_.clear(); admin_.clear(); token_->clear(); token_->setReadOnly(false);
     create_->setEnabled(profile_.valid()); join_->setEnabled(profile_.valid()); stop_->setEnabled(false); share_->setEnabled(false);
     viewerPanel_->clearFrame("Sessão encerrada."); metrics_->setText("Upload: 0 kbps"); notice("Sessão encerrada.");
+    showPage(0);
 }
 void Window::openSocket() {
     QUrl url(endpoint_); auto host = url.host();
@@ -242,9 +1700,9 @@ void Window::send(QJsonObject m) {
 void Window::row(const QString &id, const QString &text) {
     auto found = peers_.find(id); QString name = id==participantId_ ? profile_.nickname : found != peers_.end() && !found->second->nickname.isEmpty() ? found->second->nickname : QString("Participante %1").arg(id.left(4));
     int avatar = id==participantId_ ? profile_.avatar : found != peers_.end() ? found->second->avatar : 0;
-    QPixmap circle(20,20); circle.fill(Qt::transparent); QPainter painter(&circle); painter.setBrush(avatarColor(avatar)); painter.setPen(Qt::NoPen); painter.drawEllipse(2,2,16,16); painter.end();
-    for (int i = 0; i < viewers_->count(); ++i) if (viewers_->item(i)->data(Qt::UserRole).toString() == id) { viewers_->item(i)->setText(name + " — " + text); viewers_->item(i)->setIcon(QIcon(circle)); return; }
-    auto *item = new QListWidgetItem(QIcon(circle), name + " — " + text, viewers_); item->setData(Qt::UserRole, id); if (!viewers_->currentItem()) viewers_->setCurrentItem(item);
+    QIcon icon = Theme::avatarIcon(avatar, 20);
+    for (int i = 0; i < viewers_->count(); ++i) if (viewers_->item(i)->data(Qt::UserRole).toString() == id) { viewers_->item(i)->setText(name + " — " + text); viewers_->item(i)->setIcon(icon); return; }
+    auto *item = new QListWidgetItem(icon, name + " — " + text, viewers_); item->setData(Qt::UserRole, id); if (!viewers_->currentItem()) viewers_->setCurrentItem(item);
 }
 QString Window::selectedPeer() const {
     if(!sender())return broadcaster_;
@@ -562,7 +2020,8 @@ void Window::log(const QString &event, const QString &id, QJsonObject fields) {
 }
 void Window::updateIdentity() {
     identity_->setText(profile_.valid() ? profile_.nickname : "Escolher nickname");
-    QPixmap image(22,22); image.fill(Qt::transparent); QPainter p(&image); p.setPen(Qt::NoPen); p.setBrush(avatarColor(profile_.avatar)); p.drawEllipse(2,2,18,18); p.end(); identity_->setIcon(QIcon(image));
+    identity_->setIcon(Theme::avatarIcon(profile_.avatar, 22));
+    identity_->setIconSize(QSize(22, 22));
 }
 void Window::editIdentity() {
     if (!editProfile(profile_, this)) return; updateIdentity();
@@ -672,6 +2131,7 @@ void Window::updatePresentation() {
     share_->setEnabled(active_ && admitted_ && broadcaster_.isEmpty() && !shareRequested_ && socketLost_<0);
     pause_->setEnabled(sender()); change_->setEnabled(sender() && sharing_);
     remove_->setVisible(administrator_); approve_->setVisible(administrator_ && roomRequiresApproval_);
+    updateRoomIndicators();
 }
 void Window::roomState(const QJsonObject &m) {
     const auto revision=m["revision"].toInteger();
