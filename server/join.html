@@ -356,6 +356,7 @@
     }
 
     const fullLink = location.href;
+    const legacyProtocol = 'lazarus-share://join#' + hash;
     const queryPart = hash.includes('&') ? '?' + hash.substring(rawToken.length + 1) : '';
     open.href = 'lazarus-share://join/' + encodeURIComponent(rawToken) + queryPart + '#' + hash;
     open.hidden = false;
