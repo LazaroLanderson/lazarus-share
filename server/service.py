@@ -56,7 +56,7 @@ def participant_profile(message):
     avatar = value.get('avatar', 0)
     if not isinstance(name, str) or not isinstance(avatar, int) or isinstance(avatar, bool) or not 0 <= avatar < 10: raise ValueError()
     name = unicodedata.normalize('NFC', name).strip()
-    if name and (len(name) > 80 or len(regex.findall(r'\X', name)) > 10 or any(unicodedata.category(c) in ('Cc','Cf','Zl','Zp') for c in name)): raise ValueError()
+    if name and (len(name) > 80 or len(regex.findall(r'\X', name)) > 12 or any(unicodedata.category(c) in ('Cc','Cf','Zl','Zp') for c in name)): raise ValueError()
     return {'nickname': name, 'avatar': avatar}
 
 

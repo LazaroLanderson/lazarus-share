@@ -60,7 +60,7 @@ for name in ("va", "nvcodec", "qsv"):
     source = Path("/usr/lib/x86_64-linux-gnu/gstreamer-1.0") / f"libgst{name}.so"
     if source.exists(): copy(source, libraries / "gstreamer-1.0" / source.name)
 
-for group in ("platforms", "platforminputcontexts", "wayland-shell-integration", "wayland-decoration-client", "wayland-graphics-integration-client", "xcbglintegrations", "tls"):
+for group in ("platforms", "platforminputcontexts", "wayland-shell-integration", "wayland-decoration-client", "wayland-graphics-integration-client", "xcbglintegrations", "tls", "imageformats", "iconengines"):
     directory = Path(a.qt_plugins) / group
     if directory.exists():
         for source in directory.glob("*.so"): copy(source, root / "usr/plugins" / group / source.name)
@@ -88,6 +88,9 @@ while queue:
 repo = Path(__file__).resolve().parents[2]
 for name in ("AppRun", "lazarus-share.desktop", "lazarus-share.svg"):
     shutil.copy2(repo / "packaging/linux" / name, root / name)
+if (repo / "assets/app_icon.png").exists():
+    shutil.copy2(repo / "assets/app_icon.png", root / "lazarus-share.png")
+    shutil.copy2(repo / "assets/app_icon.png", root / ".DirIcon")
 (root / "AppRun").chmod(0o755)
 if (repo / "assets").exists():
     shutil.copytree(repo / "assets", root / "usr/bin/assets", dirs_exist_ok=True)

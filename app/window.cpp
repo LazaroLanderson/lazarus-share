@@ -3,6 +3,8 @@
 #include "theme.h"
 #include "toast.h"
 #include <QApplication>
+#include <QMouseEvent>
+#include <QWindow>
 #include <QClipboard>
 #include <QFileDialog>
 #include <QFile>
@@ -144,6 +146,38 @@ QWidget *Window::createHeaderWidget() {
     identity_->setStyleSheet("QPushButton { background-color: #FFFFFF; color: #1B1C16; border: 1.5px solid #E4E3D8; border-radius: 18px; padding: 4px 14px 4px 10px; font-weight: 600; font-size: 12px; } QPushButton:hover { background-color: #F0EEE3; border-color: #CFD0C5; }");
     rightLayout->addWidget(identity_);
 
+    topHeaderWidget_ = header;
+
+    auto *windowControls = new QHBoxLayout;
+    windowControls->setSpacing(4);
+
+    minBtn_ = new QPushButton("—", header);
+    minBtn_->setObjectName("btnMinimize");
+    minBtn_->setFixedSize(30, 30);
+    minBtn_->setToolTip("Minimizar");
+    minBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; font-weight: bold; color: #1B1C16; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; }");
+    connect(minBtn_, &QPushButton::clicked, this, &Window::showMinimized);
+    windowControls->addWidget(minBtn_);
+
+    maxBtn_ = new QPushButton(isMaximized() ? "❐" : "□", header);
+    maxBtn_->setObjectName("btnMaximize");
+    maxBtn_->setFixedSize(30, 30);
+    maxBtn_->setToolTip("Maximizar / Restaurar");
+    maxBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; color: #1B1C16; font-size: 12px; } QPushButton:hover { background-color: #EAE8DE; }");
+    connect(maxBtn_, &QPushButton::clicked, this, [this] {
+        if (isMaximized()) showNormal(); else showMaximized();
+    });
+    windowControls->addWidget(maxBtn_);
+
+    closeBtn_ = new QPushButton("✕", header);
+    closeBtn_->setObjectName("btnClose");
+    closeBtn_->setFixedSize(30, 30);
+    closeBtn_->setToolTip("Fechar");
+    closeBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; color: #1B1C16; font-size: 11px; font-weight: bold; } QPushButton:hover { background-color: #FFDAD6; color: #BA1A1A; }");
+    connect(closeBtn_, &QPushButton::clicked, this, &Window::close);
+    windowControls->addWidget(closeBtn_);
+
+    rightLayout->addLayout(windowControls);
     layout->addLayout(rightLayout);
     return header;
 }
@@ -159,133 +193,113 @@ QWidget *Window::createHomePage() {
     auto *page = new QWidget(scroll);
     page->setObjectName("homePage");
     auto *layout = new QVBoxLayout(page);
-    layout->setContentsMargins(40, 16, 40, 20);
-    layout->setSpacing(14);
+    layout->setContentsMargins(36, 12, 36, 16);
+    layout->setSpacing(10);
 
+    // Status Bar Superior (Discreta e fina)
     auto *bar = new QWidget(page);
-    bar->setStyleSheet("background-color: #F0EEE3; border-radius: 10px; padding: 4px;");
+    bar->setFixedHeight(32);
+    bar->setStyleSheet("background-color: #F0EEE3; border-radius: 8px;");
     auto *barLayout = new QHBoxLayout(bar);
-    barLayout->setContentsMargins(14, 6, 14, 6);
+    barLayout->setContentsMargins(12, 4, 12, 4);
 
-    auto *barLeft = new QHBoxLayout;
-    barLeft->setSpacing(8);
-    auto *pulseDot = new QLabel(bar);
-    pulseDot->setFixedSize(8, 8);
-    pulseDot->setStyleSheet("background-color: #0FFCBE; border-radius: 4px; border: none;");
-    barLeft->addWidget(pulseDot);
-
-    headerStatusLabel_ = new QLabel("Sessão • Pronta para conectar", bar);
+    headerStatusLabel_ = new QLabel("● Pronto para conectar", bar);
     headerStatusLabel_->setFont(Theme::codeFont(9));
-    headerStatusLabel_->setStyleSheet("color: #4C4546; text-transform: uppercase; font-weight: 600; border: none;");
-    barLeft->addWidget(headerStatusLabel_);
-    barLayout->addLayout(barLeft);
+    headerStatusLabel_->setStyleSheet("color: #006C4F; font-weight: 700; border: none;");
+    barLayout->addWidget(headerStatusLabel_);
 
     barLayout->addStretch();
 
-    auto *barRight = new QHBoxLayout;
-    barRight->setSpacing(10);
-    auto *p2pPill = new QLabel("Conexão Direta Ativa", bar);
+    auto *p2pPill = new QLabel("P2P direto", bar);
     p2pPill->setFont(Theme::codeFont(9));
-    p2pPill->setStyleSheet("background-color: #FFFFFF; color: #006C4F; padding: 4px 10px; border-radius: 6px; font-weight: 700; border: none;");
-    barRight->addWidget(p2pPill);
-    barLayout->addLayout(barRight);
+    p2pPill->setStyleSheet("background-color: #FFFFFF; color: #4C4546; padding: 2px 8px; border-radius: 4px; font-weight: 600; border: none;");
+    barLayout->addWidget(p2pPill);
     layout->addWidget(bar);
 
+    // Hero Block Compacto
     auto *heroWidget = new QWidget(page);
     auto *heroLayout = new QVBoxLayout(heroWidget);
+    heroLayout->setContentsMargins(0, 4, 0, 4);
     heroLayout->setAlignment(Qt::AlignCenter);
-    heroLayout->setSpacing(8);
+    heroLayout->setSpacing(2);
 
-    auto *badgePill = new QLabel("100% Privado • Criptografia de Ponta a Ponta", heroWidget);
-    badgePill->setFont(Theme::codeFont(9));
-    badgePill->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; padding: 4px 14px; border-radius: 12px; font-weight: 600; border: none;");
-    badgePill->setAlignment(Qt::AlignCenter);
-    heroLayout->addWidget(badgePill, 0, Qt::AlignCenter);
-
-    auto *heroTitle = new QLabel(heroWidget);
-    heroTitle->setFont(Theme::headlineFont(24, QFont::Bold));
-    heroTitle->setTextFormat(Qt::RichText);
-    heroTitle->setText("Compartilhe sua tela, <span style='border-bottom: 3px solid #0FFCBE; padding-bottom: 2px;'>sem cadastro</span>");
+    auto *heroTitle = new QLabel("Compartilhe sua tela com segurança", heroWidget);
+    heroTitle->setFont(Theme::headlineFont(18, QFont::Bold));
     heroTitle->setStyleSheet("color: #000000; border: none;");
     heroTitle->setAlignment(Qt::AlignCenter);
-    heroTitle->setWordWrap(true);
     heroLayout->addWidget(heroTitle, 0, Qt::AlignCenter);
 
-    auto *heroSubtitle = new QLabel("Transmissão em alta definição e tempo real diretamente entre você e seus colegas, sem precisar criar contas.", heroWidget);
-    heroSubtitle->setFont(Theme::bodyFont(11));
-    heroSubtitle->setStyleSheet("color: #4C4546; border: none; padding: 2px 0px;");
+    auto *heroSubtitle = new QLabel("Criptografia ponta a ponta • sem gravação • até 4 pessoas", heroWidget);
+    heroSubtitle->setFont(Theme::bodyFont(10));
+    heroSubtitle->setStyleSheet("color: #4C4546; border: none;");
     heroSubtitle->setAlignment(Qt::AlignCenter);
-    heroSubtitle->setWordWrap(true);
-    heroSubtitle->setMaximumWidth(700);
     heroLayout->addWidget(heroSubtitle, 0, Qt::AlignCenter);
     layout->addWidget(heroWidget);
 
     auto *cardsLayout = new QHBoxLayout;
-    cardsLayout->setSpacing(20);
+    cardsLayout->setSpacing(16);
 
     // CARD 1: Compartilhar Minha Tela
     auto *card1 = new QFrame(page);
     card1->setObjectName("homeCard1");
-    card1->setStyleSheet("QFrame#homeCard1 { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 16px; }");
+    card1->setStyleSheet("QFrame#homeCard1 { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 14px; }");
     auto *card1Layout = new QVBoxLayout(card1);
-    card1Layout->setContentsMargins(22, 18, 22, 18);
-    card1Layout->setSpacing(12);
+    card1Layout->setContentsMargins(18, 14, 18, 14);
+    card1Layout->setSpacing(8);
 
     auto *card1Top = new QHBoxLayout;
     auto *card1Icon = new QLabel(card1);
-    card1Icon->setFixedSize(48, 48);
-    card1Icon->setStyleSheet("background-color: #F0EEE3; border-radius: 12px; border: none;");
+    card1Icon->setFixedSize(40, 40);
+    card1Icon->setStyleSheet("background-color: #F0EEE3; border-radius: 10px; border: none;");
     card1Icon->setAlignment(Qt::AlignCenter);
-    card1Icon->setPixmap(Theme::icon("screen_share", Theme::SecondaryDark, 26).pixmap(26, 26));
+    card1Icon->setPixmap(Theme::icon("screen_share", Theme::SecondaryDark, 22).pixmap(22, 22));
     card1Top->addWidget(card1Icon);
     card1Top->addStretch();
 
-    auto *readyBadge = new QLabel("PRONTO", card1);
+    auto *readyBadge = new QLabel("● Pronto", card1);
     readyBadge->setFont(Theme::codeFont(9));
-    readyBadge->setStyleSheet("background-color: #F0EEE3; color: #006C4F; font-weight: 700; padding: 4px 10px; border-radius: 10px; border: none;");
+    readyBadge->setStyleSheet("color: #006C4F; font-weight: 700; background: transparent; border: none;");
     card1Top->addWidget(readyBadge);
     card1Layout->addLayout(card1Top);
 
     auto *card1Title = new QLabel("Compartilhar minha tela", card1);
-    card1Title->setFont(Theme::headlineFont(16, QFont::Bold));
+    card1Title->setFont(Theme::headlineFont(15, QFont::Bold));
     card1Title->setStyleSheet("color: #000000; border: none;");
     card1Layout->addWidget(card1Title);
 
     auto *card1Desc = new QLabel("Crie uma sala instantânea e compartilhe o link com até 4 pessoas para assistirem direto no navegador.", card1);
-    card1Desc->setFont(Theme::bodyFont(10));
+    card1Desc->setFont(Theme::bodyFont(9));
     card1Desc->setStyleSheet("color: #4C4546; border: none;");
     card1Desc->setWordWrap(true);
     card1Layout->addWidget(card1Desc);
 
     auto *specsBox = new QWidget(card1);
     specsBox->setObjectName("specsBox");
-    specsBox->setStyleSheet("QWidget#specsBox { background-color: #F6F4E9; border-radius: 8px; border: none; }");
+    specsBox->setStyleSheet("QWidget#specsBox { background-color: #F6F4E9; border-radius: 6px; border: none; }");
     auto *specsLayout = new QHBoxLayout(specsBox);
-    specsLayout->setContentsMargins(10, 8, 10, 8);
+    specsLayout->setContentsMargins(8, 6, 8, 6);
     auto *specsText = new QLabel("Tela Principal • Áudio do computador ativado", specsBox);
-    specsText->setFont(Theme::bodyFont(9));
+    specsText->setFont(Theme::bodyFont(8));
     specsText->setStyleSheet("color: #1B1C16; font-weight: 500; border: none;");
     specsLayout->addWidget(specsText);
     specsLayout->addStretch();
-    auto *fpsBadge = new QLabel("60 FPS (Fluido)", specsBox);
-    fpsBadge->setFont(Theme::codeFont(9));
+    auto *fpsBadge = new QLabel("60 FPS", specsBox);
+    fpsBadge->setFont(Theme::codeFont(8));
     fpsBadge->setStyleSheet("background-color: #FFFFFF; color: #000000; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: none;");
     specsLayout->addWidget(fpsBadge);
     card1Layout->addWidget(specsBox);
 
-    card1Layout->addStretch();
-
     auto *startShareBtn = new QPushButton("Iniciar Compartilhamento", card1);
     startShareBtn->setObjectName("btn-start-share");
-    startShareBtn->setIcon(Theme::icon("cast", Theme::Secondary, 18));
-    startShareBtn->setStyleSheet("QPushButton { background-color: #000000; color: #FFFFFF; font-weight: 700; font-size: 13px; border-radius: 10px; padding: 12px; border: none; } QPushButton:hover { background-color: #1B1B1B; }");
+    startShareBtn->setIcon(Theme::icon("screen_share", Theme::Secondary, 16));
+    startShareBtn->setStyleSheet("QPushButton { background-color: #000000; color: #FFFFFF; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 10px; border: none; } QPushButton:hover { background-color: #1B1B1B; }");
     connect(startShareBtn, &QPushButton::clicked, this, [this] {
         showPage(1);
     });
     card1Layout->addWidget(startShareBtn);
 
     auto *card1Footnote = new QLabel("Sem limite de duração da chamada", card1);
-    card1Footnote->setFont(Theme::bodyFont(9));
+    card1Footnote->setFont(Theme::bodyFont(8));
     card1Footnote->setStyleSheet("color: #7E7576; border: none;");
     card1Footnote->setAlignment(Qt::AlignCenter);
     card1Layout->addWidget(card1Footnote);
@@ -294,33 +308,28 @@ QWidget *Window::createHomePage() {
     // CARD 2: Assistir a uma Tela
     auto *card2 = new QFrame(page);
     card2->setObjectName("homeCard2");
-    card2->setStyleSheet("QFrame#homeCard2 { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 16px; }");
+    card2->setStyleSheet("QFrame#homeCard2 { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 14px; }");
     auto *card2Layout = new QVBoxLayout(card2);
-    card2Layout->setContentsMargins(22, 18, 22, 18);
-    card2Layout->setSpacing(12);
+    card2Layout->setContentsMargins(18, 14, 18, 14);
+    card2Layout->setSpacing(8);
 
     auto *card2Top = new QHBoxLayout;
     auto *card2Icon = new QLabel(card2);
-    card2Icon->setFixedSize(48, 48);
-    card2Icon->setStyleSheet("background-color: #F0EEE3; border-radius: 12px; border: none;");
+    card2Icon->setFixedSize(40, 40);
+    card2Icon->setStyleSheet("background-color: #F0EEE3; border-radius: 10px; border: none;");
     card2Icon->setAlignment(Qt::AlignCenter);
-    card2Icon->setPixmap(Theme::icon("monitor", Theme::Primary, 26).pixmap(26, 26));
+    card2Icon->setPixmap(Theme::icon("monitor", Theme::Primary, 22).pixmap(22, 22));
     card2Top->addWidget(card2Icon);
     card2Top->addStretch();
-
-    auto *p2pBadge = new QLabel("ASSISTIR SALA", card2);
-    p2pBadge->setFont(Theme::codeFont(9));
-    p2pBadge->setStyleSheet("background-color: #F0EEE3; color: #4C4546; font-weight: 700; padding: 4px 10px; border-radius: 10px; border: none;");
-    card2Top->addWidget(p2pBadge);
     card2Layout->addLayout(card2Top);
 
     auto *card2Title = new QLabel("Assistir a uma tela", card2);
-    card2Title->setFont(Theme::headlineFont(16, QFont::Bold));
+    card2Title->setFont(Theme::headlineFont(15, QFont::Bold));
     card2Title->setStyleSheet("color: #000000; border: none;");
     card2Layout->addWidget(card2Title);
 
     auto *card2Desc = new QLabel("Cole o código ou o link da sala que seu colega compartilhou com você.", card2);
-    card2Desc->setFont(Theme::bodyFont(10));
+    card2Desc->setFont(Theme::bodyFont(9));
     card2Desc->setStyleSheet("color: #4C4546; border: none;");
     card2Desc->setWordWrap(true);
     card2Layout->addWidget(card2Desc);
@@ -332,9 +341,9 @@ QWidget *Window::createHomePage() {
     inputTrayLayout->setContentsMargins(0, 0, 0, 0);
     inputTrayLayout->setSpacing(4);
 
-    auto *inputLabel = new QLabel("Código ou Link da Sala", inputTray);
+    auto *inputLabel = new QLabel("Código ou link da sala", inputTray);
     inputLabel->setFont(Theme::codeFont(9));
-    inputLabel->setStyleSheet("color: #1B1C16; text-transform: uppercase; font-weight: 700; border: none;");
+    inputLabel->setStyleSheet("color: #1B1C16; font-weight: 700; border: none;");
     inputTrayLayout->addWidget(inputLabel);
 
     auto *inputRow = new QHBoxLayout;
@@ -342,12 +351,12 @@ QWidget *Window::createHomePage() {
     token_ = new QLineEdit(inputTray);
     token_->setObjectName("invite");
     token_->setPlaceholderText("ex: lzr-792-sky ou https://...");
-    token_->setStyleSheet("QLineEdit { background-color: #F6F4E9; border: 1px solid #E4E3D8; border-radius: 8px; padding: 10px 12px; font-family: 'JetBrains Mono'; }");
+    token_->setStyleSheet("QLineEdit { background-color: #F6F4E9; border: 1px solid #E4E3D8; border-radius: 8px; padding: 8px 10px; font-family: 'JetBrains Mono'; font-size: 11px; }");
     inputRow->addWidget(token_, 1);
 
     auto *pasteBtn = new QPushButton("Colar", inputTray);
     pasteBtn->setIcon(Theme::icon("paste", QColor(0, 0, 0), 14));
-    pasteBtn->setStyleSheet("QPushButton { background-color: #FFFFFF; border: 1px solid #E4E3D8; border-radius: 8px; padding: 8px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #F0EEE3; }");
+    pasteBtn->setStyleSheet("QPushButton { background-color: #FFFFFF; border: 1px solid #E4E3D8; border-radius: 8px; padding: 7px 10px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #F0EEE3; }");
     connect(pasteBtn, &QPushButton::clicked, this, [this] {
         auto clipboardText = QApplication::clipboard()->text().trimmed();
         if (!clipboardText.isEmpty()) token_->setText(clipboardText);
@@ -356,66 +365,57 @@ QWidget *Window::createHomePage() {
     inputTrayLayout->addLayout(inputRow);
     card2Layout->addWidget(inputTray);
 
-    card2Layout->addStretch();
-
     join_ = new QPushButton("Entrar com link", card2);
     join_->setObjectName("btn-join-room");
-    join_->setIcon(Theme::icon("login", QColor(0, 0, 0), 18));
-    join_->setStyleSheet("QPushButton { background-color: #EAE8DE; color: #000000; font-weight: 700; font-size: 13px; border-radius: 10px; padding: 12px; border: 1px solid #E4E3D8; } QPushButton:hover { background-color: #E4E3D8; }");
+    join_->setIcon(Theme::icon("login", QColor(0, 0, 0), 16));
+    join_->setStyleSheet("QPushButton { background-color: #EAE8DE; color: #000000; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 10px; border: 1px solid #E4E3D8; } QPushButton:hover { background-color: #E4E3D8; }");
     card2Layout->addWidget(join_);
 
     auto *card2Footnote = new QLabel("Acesso imediato para assistir", card2);
-    card2Footnote->setFont(Theme::bodyFont(9));
+    card2Footnote->setFont(Theme::bodyFont(8));
     card2Footnote->setStyleSheet("color: #7E7576; border: none;");
     card2Footnote->setAlignment(Qt::AlignCenter);
     card2Layout->addWidget(card2Footnote);
     cardsLayout->addWidget(card2, 1);
     layout->addLayout(cardsLayout);
 
-    // Micro Technical Ribbon
-    auto *ribbonLayout = new QHBoxLayout;
-    ribbonLayout->setSpacing(12);
+    // Micro Technical Specs Ribbon em Linha Única
+    auto *ribbonBar = new QFrame(page);
+    ribbonBar->setObjectName("homeRibbonBar");
+    ribbonBar->setStyleSheet("QFrame#homeRibbonBar { background-color: #F6F4E9; border-radius: 8px; border: 1px solid #EAE8DE; }");
+    auto *rbLayout = new QHBoxLayout(ribbonBar);
+    rbLayout->setContentsMargins(14, 6, 14, 6);
+    rbLayout->setSpacing(12);
 
-    auto addRibbonCard = [&](const QString &iconName, const QString &label, const QString &val) {
-        auto *ribbonCard = new QFrame(page);
-        ribbonCard->setObjectName("homeRibbonCard");
-        ribbonCard->setStyleSheet("QFrame#homeRibbonCard { background-color: #F6F4E9; border-radius: 10px; border: 1px solid #EAE8DE; }");
-        auto *rcl = new QHBoxLayout(ribbonCard);
-        rcl->setContentsMargins(12, 8, 12, 8);
-        rcl->setSpacing(10);
-
-        auto *ico = new QLabel(ribbonCard);
-        ico->setFixedSize(32, 32);
-        ico->setStyleSheet("background-color: #FFFFFF; border-radius: 6px; border: none;");
-        ico->setAlignment(Qt::AlignCenter);
-        ico->setPixmap(Theme::icon(iconName, Theme::Primary, 16).pixmap(16, 16));
-        rcl->addWidget(ico);
-
-        auto *txtLayout = new QVBoxLayout;
-        txtLayout->setSpacing(1);
-        auto *lbl = new QLabel(label, ribbonCard);
-        lbl->setFont(Theme::codeFont(8));
-        lbl->setStyleSheet("color: #7E7576; text-transform: uppercase; border: none;");
-        txtLayout->addWidget(lbl);
-
-        auto *valLbl = new QLabel(val, ribbonCard);
-        valLbl->setFont(Theme::codeFont(10));
-        valLbl->setStyleSheet("color: #000000; font-weight: 700; border: none;");
-        txtLayout->addWidget(valLbl);
-        rcl->addLayout(txtLayout);
-
-        ribbonLayout->addWidget(ribbonCard);
+    auto addSpec = [&](const QString &icon, const QString &text) {
+        auto *item = new QWidget(ribbonBar);
+        auto *il = new QHBoxLayout(item);
+        il->setContentsMargins(0, 0, 0, 0);
+        il->setSpacing(6);
+        auto *ico = new QLabel(item);
+        ico->setPixmap(Theme::icon(icon, Theme::Primary, 14).pixmap(14, 14));
+        il->addWidget(ico);
+        auto *lbl = new QLabel(text, item);
+        lbl->setFont(Theme::codeFont(9));
+        lbl->setStyleSheet("color: #1B1C16; font-weight: 600; border: none;");
+        il->addWidget(lbl);
+        rbLayout->addWidget(item);
     };
 
-    addRibbonCard("bolt", "Resposta da Transmissão", "Tempo real (sem atraso)");
-    addRibbonCard("security", "Proteção da Sala", "Criptografia Ponta a Ponta");
-    addRibbonCard("volume_up", "Áudio do Computador", "Alta Definição");
-    addRibbonCard("monitor", "Qualidade Máxima", "Até 4K / 60 FPS");
-    layout->addLayout(ribbonLayout);
+    rbLayout->addStretch();
+    addSpec("bolt", "Tempo real (sem atraso)");
+    rbLayout->addWidget(new QLabel("•", ribbonBar));
+    addSpec("security", "Criptografia Ponta a Ponta");
+    rbLayout->addWidget(new QLabel("•", ribbonBar));
+    addSpec("volume_up", "Áudio do computador");
+    rbLayout->addWidget(new QLabel("•", ribbonBar));
+    addSpec("monitor", "Até 4K / 60 FPS");
+    rbLayout->addStretch();
+    layout->addWidget(ribbonBar);
 
     auto *footer = new QWidget(page);
     auto *footerLayout = new QHBoxLayout(footer);
-    footerLayout->setContentsMargins(0, 10, 0, 0);
+    footerLayout->setContentsMargins(0, 6, 0, 0);
 
     auto *coreVer = new QLabel("Lazarus Share v0.3.0", footer);
     coreVer->setFont(Theme::codeFont(9));
@@ -526,12 +526,15 @@ QWidget *Window::createPrepPage() {
         auto *card = new QPushButton(group1);
         card->setCheckable(true);
         if (i == 0) card->setChecked(true);
+        card->setMinimumHeight(130);
+        card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        if (screenCount == 1) card->setMaximumWidth(320);
         card->setStyleSheet(R"(
             QPushButton {
                 background-color: #FFFFFF;
                 border: 2px solid #EAE8DE;
                 border-radius: 12px;
-                padding: 12px;
+                padding: 10px;
                 text-align: left;
             }
             QPushButton:checked {
@@ -542,7 +545,7 @@ QWidget *Window::createPrepPage() {
 
         auto *cLayout = new QVBoxLayout(card);
         cLayout->setContentsMargins(10, 8, 10, 8);
-        cLayout->setSpacing(8);
+        cLayout->setSpacing(6);
 
         auto *cTop = new QHBoxLayout;
         auto *statusTag = new QLabel(i == 0 ? "SELECIONADO" : "DISPONÍVEL", card);
@@ -758,12 +761,14 @@ QWidget *Window::createPrepPage() {
         auto *pCard = new QPushButton(group3);
         pCard->setCheckable(true);
         if (pi.idx == 1) pCard->setChecked(true);
+        pCard->setMinimumHeight(115);
+        pCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         pCard->setStyleSheet(R"(
             QPushButton {
                 background-color: #FFFFFF;
                 border: 2px solid #EAE8DE;
                 border-radius: 12px;
-                padding: 12px;
+                padding: 10px;
                 text-align: left;
             }
             QPushButton:checked {
@@ -774,7 +779,7 @@ QWidget *Window::createPrepPage() {
 
         auto *pcl = new QVBoxLayout(pCard);
         pcl->setContentsMargins(10, 8, 10, 8);
-        pcl->setSpacing(6);
+        pcl->setSpacing(4);
 
         auto *pTop = new QHBoxLayout;
         auto *pName = new QLabel(pi.name, pCard);
@@ -1051,11 +1056,14 @@ QWidget *Window::createRoomPage() {
     fbLayout->addStretch();
 
     share_ = new QPushButton("Compartilhar tela", floatingBar);
-    share_->setStyleSheet("QPushButton { background-color: #14FDBF; color: #002116; border: 1px solid #0FFCBE; border-radius: 6px; padding: 6px 12px; font-weight: 700; font-size: 11px; } QPushButton:hover { background-color: #38FFC3; } QPushButton:disabled { background-color: #F0EEE3; color: #A09E94; border: 1px solid #EAE8DE; }");
+    share_->setIcon(Theme::icon("screen_share", Theme::SecondaryDark, 14));
+    share_->setStyleSheet("QPushButton { background-color: #14FDBF; color: #002116; border: 1px solid #0FFCBE; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11px; } QPushButton:hover { background-color: #38FFC3; } QPushButton:disabled { background-color: #F0EEE3; color: #A09E94; border: 1px solid #EAE8DE; }");
     pause_ = new QPushButton("Parar compartilhamento", floatingBar);
-    pause_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
+    pause_->setIcon(Theme::icon("close", Theme::Primary, 14));
+    pause_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
     change_ = new QPushButton("Monitor / qualidade", floatingBar);
-    change_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
+    change_->setIcon(Theme::icon("tune", Theme::Primary, 14));
+    change_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
 
     fbLayout->addWidget(share_);
     fbLayout->addWidget(pause_);
@@ -1064,24 +1072,25 @@ QWidget *Window::createRoomPage() {
     audioBtn_ = new QPushButton("Áudio do sistema", floatingBar);
     audioBtn_->setObjectName("btn-select-audio");
     audioBtn_->setIcon(Theme::icon("volume_up", Theme::Primary, 14));
-    audioBtn_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
+    audioBtn_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
     connect(audioBtn_, &QPushButton::clicked, this, &Window::openAudioDialog);
     fbLayout->addWidget(audioBtn_);
 
     stop_ = new QPushButton("Encerrar / sair", floatingBar);
     stop_->setObjectName("btn-exit-room");
     stop_->setIcon(Theme::icon("logout", QColor(255, 255, 255), 14));
-    stop_->setStyleSheet("QPushButton { background-color: #BA1A1A; color: #FFFFFF; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; font-size: 11px; } QPushButton:hover { background-color: #D32F2F; }");
+    stop_->setStyleSheet("QPushButton { background-color: #BA1A1A; color: #FFFFFF; border: none; border-radius: 6px; padding: 6px 12px; font-weight: 700; font-size: 11px; } QPushButton:hover { background-color: #D32F2F; }");
     fbLayout->addWidget(stop_);
     leftStageLayout->addWidget(floatingBar);
-    stageLayout->addWidget(leftStage, 2);
+    stageLayout->addWidget(leftStage, 4);
 
     auto *rightPanel = new QFrame(stageWidget);
     rightPanel->setObjectName("rightPanel");
+    rightPanel->setMaximumWidth(220);
     rightPanel->setStyleSheet("QFrame#rightPanel { background-color: #F6F4E9; border-radius: 14px; border: 1px solid #EAE8DE; }");
     auto *rpLayout = new QVBoxLayout(rightPanel);
-    rpLayout->setContentsMargins(16, 14, 16, 14);
-    rpLayout->setSpacing(10);
+    rpLayout->setContentsMargins(14, 12, 14, 12);
+    rpLayout->setSpacing(8);
 
     auto *rpHeader = new QHBoxLayout;
     auto *rpTitle = new QLabel("Participantes", rightPanel);
@@ -1089,7 +1098,7 @@ QWidget *Window::createRoomPage() {
     rpTitle->setStyleSheet("color: #000000; border: none;");
     rpHeader->addWidget(rpTitle);
     rpHeader->addStretch();
-    auto *maxUsersLbl = new QLabel("Até 4 pessoas", rightPanel);
+    auto *maxUsersLbl = new QLabel("Até 4", rightPanel);
     maxUsersLbl->setFont(Theme::codeFont(8));
     maxUsersLbl->setStyleSheet("color: #7E7576; font-weight: 600; text-transform: uppercase; border: none;");
     rpHeader->addWidget(maxUsersLbl);
@@ -1097,7 +1106,7 @@ QWidget *Window::createRoomPage() {
 
     viewers_ = new QListWidget(rightPanel);
     viewers_->setObjectName("viewers");
-    viewers_->setStyleSheet("QListWidget { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 8px; }");
+    viewers_->setStyleSheet("QListWidget { background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 8px; } QListWidget::item { padding: 4px; }");
     rpLayout->addWidget(viewers_, 1);
 
     auto *modActions = new QHBoxLayout;
@@ -1106,7 +1115,7 @@ QWidget *Window::createRoomPage() {
     approve_->setStyleSheet("background-color: #14FDBF; color: #002116; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11px;");
     remove_ = new QPushButton("Remover", rightPanel);
     remove_->setStyleSheet("background-color: #FFDAD6; color: #BA1A1A; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px;");
-    relay_ = new QPushButton("Tentar novamente", rightPanel);
+    relay_ = new QPushButton("Tentar", rightPanel);
     relay_->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; border: 1px solid #CFD0C5; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px;");
 
     approve_->hide();
@@ -1115,9 +1124,9 @@ QWidget *Window::createRoomPage() {
     modActions->addWidget(relay_);
     rpLayout->addLayout(modActions);
 
-    requireApproval_ = new QCheckBox("Novos espectadores precisam de aprovação", rightPanel);
+    requireApproval_ = new QCheckBox("Novos precisam de aprovação", rightPanel);
     requireApproval_->setObjectName("requireApproval");
-    requireApproval_->setFont(Theme::bodyFont(9));
+    requireApproval_->setFont(Theme::bodyFont(8));
     rpLayout->addWidget(requireApproval_);
 
     stageLayout->addWidget(rightPanel, 1);
@@ -1415,6 +1424,25 @@ QWidget *Window::createSettingsPage() {
     addDiagRow("Conexão direta em redes com bloqueio", "USA SERVIDOR DE APOIO", false);
     rcLayout->addWidget(adaptBox);
 
+    auto *creditBox = new QFrame(rightCol);
+    creditBox->setObjectName("creditBox");
+    creditBox->setStyleSheet("QFrame#creditBox { background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE; }");
+    auto *cbL = new QVBoxLayout(creditBox);
+    cbL->setContentsMargins(16, 12, 16, 12);
+    cbL->setSpacing(4);
+
+    auto *creditTitle = new QLabel("Créditos e Atribuições", creditBox);
+    creditTitle->setFont(Theme::headlineFont(11, QFont::Bold));
+    creditTitle->setStyleSheet("color: #000000; border: none;");
+    cbL->addWidget(creditTitle);
+
+    auto *creditText = new QLabel("Avatares criados por Delapouite sob licença CC BY 3.0 (game-icons.net).\nÍcones de interface baseados em Google Material Symbols (Apache 2.0).", creditBox);
+    creditText->setFont(Theme::bodyFont(8));
+    creditText->setStyleSheet("color: #4C4546; border: none;");
+    creditText->setWordWrap(true);
+    cbL->addWidget(creditText);
+    rcLayout->addWidget(creditBox);
+
     twoCol->addWidget(rightCol, 1);
     layout->addLayout(twoCol);
 
@@ -1591,8 +1619,13 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     profile_ = Profile::load();
     setWindowTitle("Lazarus Share — sem login");
     setWindowIcon(Theme::appIcon());
-    setMinimumSize(960, 680);
-    resize(1140, 800);
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
+    setMinimumSize(980, 680);
+    auto *screen = QGuiApplication::primaryScreen();
+    auto avail = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
+    int defaultW = qBound(1000, avail.width() - 100, 1200);
+    int defaultH = qBound(700, avail.height() - 80, 840);
+    resize(defaultW, defaultH);
     time_.start();
 
     createAudioDialog();
@@ -1842,11 +1875,27 @@ void Window::send(QJsonObject m) {
     if (socket_.state() == QAbstractSocket::ConnectedState) socket_.sendTextMessage(QString::fromUtf8(QJsonDocument(m).toJson(QJsonDocument::Compact)));
 }
 void Window::row(const QString &id, const QString &text) {
-    auto found = peers_.find(id); QString name = id==participantId_ ? profile_.nickname : found != peers_.end() && !found->second->nickname.isEmpty() ? found->second->nickname : QString("Participante %1").arg(id.left(4));
-    int avatar = id==participantId_ ? profile_.avatar : found != peers_.end() ? found->second->avatar : 0;
+    auto found = peers_.find(id);
+    QString name = id == participantId_ ? profile_.nickname : found != peers_.end() && !found->second->nickname.isEmpty() ? found->second->nickname : QString("User %1").arg(id.left(4));
+    if (name.size() > 12) name = name.left(12);
+    int avatar = id == participantId_ ? profile_.avatar : found != peers_.end() ? found->second->avatar : 0;
     QIcon icon = Theme::avatarIcon(avatar, 20);
-    for (int i = 0; i < viewers_->count(); ++i) if (viewers_->item(i)->data(Qt::UserRole).toString() == id) { viewers_->item(i)->setText(name + " — " + text); viewers_->item(i)->setIcon(icon); return; }
-    auto *item = new QListWidgetItem(icon, name + " — " + text, viewers_); item->setData(Qt::UserRole, id); if (!viewers_->currentItem()) viewers_->setCurrentItem(item);
+
+    bool isBroadcasting = (id == broadcaster_) || (sender() && id == participantId_);
+    QString displayName = isBroadcasting ? ("📺 " + name) : name;
+
+    for (int i = 0; i < viewers_->count(); ++i) {
+        if (viewers_->item(i)->data(Qt::UserRole).toString() == id) {
+            viewers_->item(i)->setText(displayName);
+            viewers_->item(i)->setIcon(icon);
+            viewers_->item(i)->setToolTip(name + " — " + text);
+            return;
+        }
+    }
+    auto *item = new QListWidgetItem(icon, displayName, viewers_);
+    item->setData(Qt::UserRole, id);
+    item->setToolTip(name + " — " + text);
+    if (!viewers_->currentItem()) viewers_->setCurrentItem(item);
 }
 QString Window::selectedPeer() const {
     if(!sender())return broadcaster_;
@@ -2328,4 +2377,44 @@ void Window::roomState(const QJsonObject &m) {
     updatePresentation(); refreshAudio();
     if(changed && sender() && shareRequested_) { shareRequested_=false; QTimer::singleShot(0,this,&Window::share); }
     else if(changed && !sender())shareRequested_=false;
+}
+
+void Window::mousePressEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton && topHeaderWidget_) {
+        QPoint posInHeader = topHeaderWidget_->mapFromGlobal(event->globalPosition().toPoint());
+        if (topHeaderWidget_->rect().contains(posInHeader)) {
+            QWidget *child = topHeaderWidget_->childAt(posInHeader);
+            if (!child || !qobject_cast<QPushButton *>(child)) {
+                if (windowHandle()) {
+                    windowHandle()->startSystemMove();
+                    event->accept();
+                    return;
+                }
+            }
+        }
+    }
+    QMainWindow::mousePressEvent(event);
+}
+
+void Window::mouseDoubleClickEvent(QMouseEvent *event) {
+    if (event->button() == Qt::LeftButton && topHeaderWidget_) {
+        QPoint posInHeader = topHeaderWidget_->mapFromGlobal(event->globalPosition().toPoint());
+        if (topHeaderWidget_->rect().contains(posInHeader)) {
+            QWidget *child = topHeaderWidget_->childAt(posInHeader);
+            if (!child || !qobject_cast<QPushButton *>(child)) {
+                if (isMaximized()) showNormal();
+                else showMaximized();
+                event->accept();
+                return;
+            }
+        }
+    }
+    QMainWindow::mouseDoubleClickEvent(event);
+}
+
+void Window::changeEvent(QEvent *event) {
+    if (event->type() == QEvent::WindowStateChange) {
+        if (maxBtn_) maxBtn_->setText(isMaximized() ? "❐" : "□");
+    }
+    QMainWindow::changeEvent(event);
 }

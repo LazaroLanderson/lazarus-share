@@ -99,6 +99,15 @@ private:
     void updateRoomIndicators();
     void openAudioDialog();
     void createAudioDialog();
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void changeEvent(QEvent *event) override;
+private:
+    QPushButton *minBtn_ = nullptr;
+    QPushButton *maxBtn_ = nullptr;
+    QPushButton *closeBtn_ = nullptr;
+    QWidget *topHeaderWidget_ = nullptr;
     QStackedWidget *stack_ = nullptr;
     int previousPageIndex_ = 0;
     QLabel *headerStatusLabel_ = nullptr;

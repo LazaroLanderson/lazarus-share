@@ -7,7 +7,10 @@ class QComboBox;
 class QSlider;
 class QCheckBox;
 class QBoxLayout;
-class QLabel;
+class QPushButton;
+class QFrame;
+class QTimer;
+
 class ViewerPanel : public QWidget {
     Q_OBJECT
 public:
@@ -27,8 +30,11 @@ signals:
 protected:
     bool eventFilter(QObject *, QEvent *) override;
     void closeEvent(QCloseEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
 private:
     void updateSize();
+    void updateFloatingGeometry();
+    void updateMuteUi(bool isMuted);
     VideoView *video_;
     QScrollArea *scroll_;
     QComboBox *size_;
@@ -42,4 +48,12 @@ private:
     bool fullscreen_ = false;
     QSize frameSize_;
     qint64 lastFrame_ = -1;
+
+    QWidget *topBar_ = nullptr;
+    QFrame *floatingControls_ = nullptr;
+    QWidget *volumeContainer_ = nullptr;
+    QPushButton *muteBtn_ = nullptr;
+    QLabel *volumeLabel_ = nullptr;
+    QPushButton *fullscreenBtn_ = nullptr;
+    QTimer *autoHideTimer_ = nullptr;
 };

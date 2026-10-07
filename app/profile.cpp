@@ -18,7 +18,7 @@ QString normalizedNickname(QString value) {
     for (auto ch : value) if (ch.category() == QChar::Other_Control || ch.category() == QChar::Other_Format || ch.category() == QChar::Separator_Line || ch.category() == QChar::Separator_Paragraph) return {};
     QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme, value);
     int count = 0; while (finder.toNextBoundary() >= 0) ++count;
-    return count > 0 && count <= 10 && value.size() <= 80 ? value : QString();
+    return count > 0 && count <= 12 && value.size() <= 80 ? value : QString();
 }
 bool Profile::valid() const { return !normalizedNickname(nickname).isEmpty() && avatar >= 0 && avatar < 10; }
 QJsonObject Profile::json() const { return {{"nickname", normalizedNickname(nickname)}, {"avatar", avatar}}; }
@@ -32,9 +32,11 @@ bool editProfile(Profile &profile, QWidget *parent) {
     QDialog dialog(parent);
     dialog.setWindowTitle("Seu Perfil — Lazarus Share");
     dialog.setObjectName("profileDialog");
-    dialog.setStyleSheet("QDialog#profileDialog { background-color: #FCFAEF; } QWidget#profileContent { background-color: #FCFAEF; }");
+    dialog.setStyleSheet("QDialog#profileDialog, QDialog { background-color: #FCFAEF; } QWidget#profileContent { background-color: #FCFAEF; } QScrollArea { background-color: #FCFAEF; border: none; }");
     dialog.setAutoFillBackground(true);
-    dialog.setAttribute(Qt::WA_OpaquePaintEvent, true);
+    QPalette pal = dialog.palette();
+    pal.setColor(QPalette::Window, QColor("#FCFAEF"));
+    dialog.setPalette(pal);
     dialog.resize(500, 540);
     dialog.setMinimumSize(420, 420);
 
@@ -53,7 +55,7 @@ bool editProfile(Profile &profile, QWidget *parent) {
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(12);
 
-    auto *nameLabel = new QLabel("Seu nome ou apelido (até 10 caracteres):", content);
+    auto *nameLabel = new QLabel("Seu nome ou apelido (até 12 caracteres):", content);
     nameLabel->setStyleSheet("font-weight: 700; color: #1B1C16;");
     layout->addWidget(nameLabel);
 

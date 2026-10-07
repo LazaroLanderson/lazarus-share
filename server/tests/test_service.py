@@ -239,7 +239,7 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
     async def test_end_and_profile_validation(self):
         host, hid = await self.host()
         guest, gid = await self.guest(host)
-        await guest.send_json(dict(type='profile', profile=dict(nickname='abcdefghijk', avatar=0)))
+        await guest.send_json(dict(type='profile', profile=dict(nickname='abcdefghijklm', avatar=0)))
         await self.receive(guest, 'error')
         await guest.send_json(dict(type='profile', profile=dict(nickname='Jose\u0301', avatar=9)))
         m = await self.state(guest)

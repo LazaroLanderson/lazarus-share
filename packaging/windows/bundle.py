@@ -84,7 +84,12 @@ archive = dist / "windows-payload.zip"
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
     for file in app.rglob("*"):
         if file.is_file(): z.write(file, file.relative_to(app))
-rc = dist / "payload.rc"; rc.write_text(f'1 RCDATA "{archive.as_posix()}"\n')
+icon_line = ""
+icon_path = repo / "assets/app_icon.ico"
+if icon_path.exists():
+    icon_line = f'IDI_ICON1 ICON "{icon_path.as_posix()}"\n'
+rc = dist / "payload.rc"
+rc.write_text(f'{icon_line}1 RCDATA "{archive.as_posix()}"\n')
 subprocess.run([tool("windres"), str(rc), "-o", str(dist / "payload.o")], check=True)
 subprocess.run([tool("g++"), "-std=c++20", "-O2", "-static", "-municode", "-mwindows", str(repo / "packaging/windows/launcher.cpp"), str(dist / "payload.o"), "-lbcrypt", "-ladvapi32", "-luser32", "-o", str(dist / "LazarusShare.exe")], check=True)
 print(dist / "LazarusShare.exe")

@@ -13,7 +13,7 @@ int main(int argc,char **argv) {
     qputenv("XDG_DATA_HOME",temp.path().toUtf8()); qputenv("LOCALAPPDATA",temp.path().toUtf8());
     QCoreApplication::setOrganizationName("Tests"); QCoreApplication::setApplicationName("Profile");
     QSettings::setDefaultFormat(QSettings::IniFormat); QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,temp.path());
-    if(normalizedNickname("abcdefghijk").size() || normalizedNickname("x\ny").size() || normalizedNickname("   ").size())return 1;
+    if(normalizedNickname("abcdefghijklm").size() || !normalizedNickname("abcdefghijkl").size() || normalizedNickname("x\ny").size() || normalizedNickname("   ").size())return 1;
     if(normalizedNickname(QString::fromUtf8("Jose\xcc\x81"))!=QString::fromUtf8("José"))return 2;
     Profile p{"José",9,true};p.save();auto copy=Profile::load();if(!copy.valid() || copy.nickname!=p.nickname || !copy.relay || copy.avatar!=9)return 3;
     DiagnosticLog logs(temp.path()+"/logs");logs.append("test",{{"nickname","José"},{"component","video"},{"factory","openh264dec"},{"decoder_mode","software"},{"error_domain","gst-stream-error-quark"},{"error_number",7},{"attempt",1},{"invite","https://share.app.lazaruslabs.com.br/join#SECRET"},{"link","lazarus-share://join#SECRET"},{"token","SECRET"},{"sdp","SECRET"},{"ip","SECRET"},{"message","SECRET"},{"debug","SECRET"},{"metrics",QJsonObject{{"kbps",0},{"password","SECRET"}}}});

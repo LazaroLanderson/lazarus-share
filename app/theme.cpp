@@ -125,25 +125,76 @@ QIcon Theme::appIcon() {
 
 QString Theme::avatarName(int index) {
     static const QString names[] = {
-        "Pato", "Castor", "Vaca", "Bode", "Rato",
-        "Leão", "Raposa", "Urso", "Coruja", "Sapo"
+        "Monstro", "Mago", "Elfa", "Anão", "Vampiro",
+        "Bárbaro", "Carrasco", "Goblin", "Orc", "Lorde"
     };
     return names[qBound(0, index, 9)];
 }
 
 QPixmap Theme::avatarPixmap(int index, int size) {
     int idx = qBound(0, index, 9);
-    QString path = QString("assets/avatars/avatar_%1.png").arg(idx);
-    QString altPath = QCoreApplication::applicationDirPath() + "/" + path;
-    QString upPath = QCoreApplication::applicationDirPath() + "/../" + path;
+    static const QString avatarFiles[] = {
+        "fish-monster.svg",
+        "wizard-face.svg",
+        "woman-elf-face.svg",
+        "dwarf-face.svg",
+        "vampire-dracula.svg",
+        "barbarian.svg",
+        "executioner-hood.svg",
+        "goblin-head.svg",
+        "orc-head.svg",
+        "overlord-helm.svg"
+    };
+    static const char *colors[] = {"#EF5350", "#EC407A", "#AB47BC", "#5C6BC0", "#42A5F5", "#26C6DA", "#26A69A", "#66BB6A", "#FFA726", "#8D6E63"};
 
-    QPixmap px;
-    if (QFile::exists(path)) px.load(path);
-    else if (QFile::exists(altPath)) px.load(altPath);
-    else if (QFile::exists(upPath)) px.load(upPath);
+    QString relPath = QString("assets/icons_profile/ffffff/000000/1x1/delapouite/%1").arg(avatarFiles[idx]);
+    QStringList candidates = {
+        relPath,
+        QCoreApplication::applicationDirPath() + "/" + relPath,
+        QCoreApplication::applicationDirPath() + "/../" + relPath
+    };
 
-    if (!px.isNull()) {
-        return px.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    QString foundSvg;
+    for (const auto &p : candidates) {
+        if (QFile::exists(p)) { foundSvg = p; break; }
+    }
+
+    if (!foundSvg.isEmpty()) {
+        QFile file(foundSvg);
+        if (file.open(QIODevice::ReadOnly)) {
+            QByteArray data = file.readAll();
+            file.close();
+            data.replace("<path d=\"M0 0h512v512H0z\"/>", "");
+            QImage svgImg;
+            if (svgImg.loadFromData(data, "SVG")) {
+                QPixmap circle(size, size);
+                circle.fill(Qt::transparent);
+                QPainter p(&circle);
+                p.setRenderHint(QPainter::Antialiasing);
+                p.setBrush(QColor(colors[idx]));
+                p.setPen(Qt::NoPen);
+                p.drawEllipse(0, 0, size, size);
+                int pad = qMax(1, size / 8);
+                int innerSize = size - 2 * pad;
+                QPixmap iconPx = QPixmap::fromImage(svgImg).scaled(innerSize, innerSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                p.drawPixmap(pad + (innerSize - iconPx.width()) / 2, pad + (innerSize - iconPx.height()) / 2, iconPx);
+                p.end();
+                return circle;
+            }
+        }
+    }
+
+    QString pngPath = QString("assets/avatars/avatar_%1.png").arg(idx);
+    QStringList pngCandidates = {
+        pngPath,
+        QCoreApplication::applicationDirPath() + "/" + pngPath,
+        QCoreApplication::applicationDirPath() + "/../" + pngPath
+    };
+    for (const auto &p : pngCandidates) {
+        if (QFile::exists(p)) {
+            QPixmap px;
+            if (px.load(p)) return px.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        }
     }
 
     // Fallback: colored circle with first letter
@@ -151,7 +202,6 @@ QPixmap Theme::avatarPixmap(int index, int size) {
     circle.fill(Qt::transparent);
     QPainter p(&circle);
     p.setRenderHint(QPainter::Antialiasing);
-    static const char *colors[] = {"#EF5350", "#EC407A", "#AB47BC", "#5C6BC0", "#42A5F5", "#26C6DA", "#26A69A", "#66BB6A", "#FFA726", "#8D6E63"};
     p.setBrush(QColor(colors[idx]));
     p.setPen(Qt::NoPen);
     p.drawEllipse(1, 1, size - 2, size - 2);
@@ -167,6 +217,30 @@ QIcon Theme::avatarIcon(int index, int size) {
 }
 
 QIcon Theme::icon(const QString &name, const QColor &color, int size) {
+    QString svgFile = QString("assets/icons/%1.svg").arg(name);
+    QStringList candidates = {
+        svgFile,
+        QCoreApplication::applicationDirPath() + "/" + svgFile,
+        QCoreApplication::applicationDirPath() + "/../" + svgFile
+    };
+    QString foundSvg;
+    for (const auto &p : candidates) {
+        if (QFile::exists(p)) { foundSvg = p; break; }
+    }
+    if (!foundSvg.isEmpty()) {
+        QFile file(foundSvg);
+        if (file.open(QIODevice::ReadOnly)) {
+            QByteArray data = file.readAll();
+            file.close();
+            data.replace("currentColor", color.name(QColor::HexRgb).toUtf8());
+            QImage img;
+            if (img.loadFromData(data, "SVG")) {
+                QPixmap px = QPixmap::fromImage(img).scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                return QIcon(px);
+            }
+        }
+    }
+
     QPixmap pixmap(size, size);
     pixmap.fill(Qt::transparent);
     QPainter p(&pixmap);
