@@ -1115,7 +1115,7 @@ QWidget *Window::createRoomPage() {
     approve_->setStyleSheet("background-color: #14FDBF; color: #002116; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 11px;");
     remove_ = new QPushButton("Remover", rightPanel);
     remove_->setStyleSheet("background-color: #FFDAD6; color: #BA1A1A; border: none; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px;");
-    relay_ = new QPushButton("Tentar", rightPanel);
+    relay_ = new QPushButton("Tentar novamente", rightPanel);
     relay_->setStyleSheet("background-color: #EAE8DE; color: #1B1C16; border: 1px solid #CFD0C5; border-radius: 6px; padding: 6px 10px; font-weight: 600; font-size: 11px;");
 
     approve_->hide();
