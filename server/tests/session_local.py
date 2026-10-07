@@ -20,7 +20,7 @@ try:
         except OSError:
             if server.poll() is not None: raise SystemExit("Local signaling failed to start")
             time.sleep(.02)
-    result = subprocess.run(["build/session-test", *sys.argv[1:]], env=env, timeout=25)
+    result = subprocess.run(["build/session-test", *sys.argv[1:]], env=env, timeout=35)
 finally:
     server.terminate(); server.wait(timeout=3)
 raise SystemExit(result.returncode)

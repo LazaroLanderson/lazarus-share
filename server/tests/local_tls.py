@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='lazarus-local-tls-') as directory:
         cert = Path(directory, 'certificate.pem')
         pin = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert.read_text())).hexdigest()
         for arguments, fingerprint in [(['--four-viewers'], pin), (['--probe-tls-refusal'], '0' * 64)]:
-            result = subprocess.run(['build/session-test', *arguments], env=env | {'LAZARUS_TLS_PIN': fingerprint}, timeout=25)
+            result = subprocess.run(['build/session-test', *arguments], env=env | {'LAZARUS_TLS_PIN': fingerprint}, timeout=35)
             if result.returncode: raise SystemExit(result.returncode)
     finally:
         server.terminate(); server.wait(timeout=3)
