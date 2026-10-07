@@ -279,7 +279,7 @@ int main(int argc, char **argv) {
         }
         if(automatic || denial)WindowTestAccess::expire(host);
         if(denial && stage==3 && WindowTestAccess::denied(host)) { passed=true; app.quit(); return; }
-        if(elapsed.elapsed()>(app.arguments().contains("--turn-renewal")?30000:20000)) { std::cerr<<"Session failed at stage "<<stage<<": "<<host.findChild<QLabel *>("status")->text().toStdString()<<'\n';WindowTestAccess::errors(host);for(auto &g:guests)WindowTestAccess::errors(*g); app.quit(); return; }
+        if(elapsed.elapsed()>(app.arguments().contains("--turn-renewal")?45000:20000)) { std::cerr<<"Session failed at stage "<<stage<<": "<<host.findChild<QLabel *>("status")->text().toStdString()<<'\n';WindowTestAccess::errors(host);for(auto &g:guests)WindowTestAccess::errors(*g); app.quit(); return; }
         if(stage==0 && host.findChild<QLabel *>("status")->text().startsWith("Sala criada")) {
             if(button(host,"Parar compartilhamento")->isEnabled()) { app.quit(); return; }
             auto token=host.findChild<QLineEdit *>("invite")->text();

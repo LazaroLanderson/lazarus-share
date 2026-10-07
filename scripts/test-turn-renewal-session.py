@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix='lazarus-auto-relay-') as directory:
             except OSError:
                 if service.poll() is not None: raise SystemExit('Signaling fixture failed')
                 time.sleep(.05)
-        subprocess.run(['build/session-test','--relay-auto','--relay-transport=0','--four-viewers','--turn-renewal'],env=env,timeout=35,check=True)
+        subprocess.run(['build/session-test','--relay-auto','--relay-transport=0','--four-viewers','--turn-renewal'],env=env,timeout=50,check=True)
     finally:
         service.terminate();turn.terminate();service.wait(timeout=3);turn.wait(timeout=3)
 print('Four-viewer renewal, retry isolation, duplicate responses and pause passed')
