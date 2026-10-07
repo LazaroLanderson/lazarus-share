@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
     QString invite;
     for (const auto &arg : app.arguments().mid(1)) if (!arg.startsWith("--")) { invite = arg; break; }
     // Invalid external input is never forwarded to or allowed to disturb a session.
-    if (!invite.isEmpty() && Protocol::inviteSecret(invite).isEmpty()) return 1;
+    if (!invite.isEmpty() && Protocol::inviteSecret(invite).isEmpty() && Protocol::secret(invite).isEmpty()) return 1;
     Activation activation;
     if (!smoke) {
         const auto result = activation.start(invite);
@@ -92,8 +92,14 @@ int main(int argc, char **argv) {
           qunsetenv("LAZARUS_UPDATE_TRANSACTION"); qunsetenv("LAZARUS_UPDATE_ROLLBACK");
       });
       QObject::connect(&activation, &Activation::invitation, &window, [&window](const QString &link) {
-          if (link.isEmpty()) { window.showNormal(); window.raise(); window.activateWindow(); }
-          else window.openInvite(link);
+          if (link.isEmpty()) {
+              window.showNormal(); window.raise(); window.activateWindow();
+#ifdef Q_OS_WIN
+              SetForegroundWindow(reinterpret_cast<HWND>(window.winId()));
+#endif
+          } else {
+              window.openInvite(link);
+          }
       });
       if (!invite.isEmpty()) QTimer::singleShot(0, &window, [&window, invite] { window.openInvite(invite); });
       result = app.exec(); }

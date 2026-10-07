@@ -86,5 +86,5 @@ with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         if file.is_file(): z.write(file, file.relative_to(app))
 rc = dist / "payload.rc"; rc.write_text(f'1 RCDATA "{archive.as_posix()}"\n')
 subprocess.run([tool("windres"), str(rc), "-o", str(dist / "payload.o")], check=True)
-subprocess.run([tool("g++"), "-std=c++20", "-O2", "-static", "-municode", "-mwindows", str(repo / "packaging/windows/launcher.cpp"), str(dist / "payload.o"), "-lbcrypt", "-ladvapi32", "-o", str(dist / "LazarusShare.exe")], check=True)
+subprocess.run([tool("g++"), "-std=c++20", "-O2", "-static", "-municode", "-mwindows", str(repo / "packaging/windows/launcher.cpp"), str(dist / "payload.o"), "-lbcrypt", "-ladvapi32", "-luser32", "-o", str(dist / "LazarusShare.exe")], check=True)
 print(dist / "LazarusShare.exe")

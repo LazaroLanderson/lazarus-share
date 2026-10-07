@@ -29,6 +29,9 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QRegularExpression>
 #include <QDateTime>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 void Window::showPage(int index) {
     if (index == 3 && stack_->currentIndex() != 3) {
@@ -1778,7 +1781,9 @@ void Window::create() {
 }
 void Window::join() {
     if (active_ || !profile_.valid()) return;
-    secret_ = Protocol::inviteSecret(token_->text()); if (secret_.isEmpty()) { notice("Link de convite inválido."); return; }
+    secret_ = Protocol::inviteSecret(token_->text());
+    if (secret_.isEmpty()) secret_ = Protocol::secret(token_->text());
+    if (secret_.isEmpty()) { notice("Link de convite inválido."); return; }
     requireApproval_->setEnabled(false); approve_->hide();
     administrator_ = false; active_ = true; room_ = Protocol::room(secret_); challenge_ = Protocol::randomHex(16);
     create_->setEnabled(false); join_->setEnabled(false); token_->setReadOnly(true); stop_->setEnabled(true);
@@ -1787,9 +1792,16 @@ void Window::join() {
 }
 void Window::openInvite(const QString &link) {
     auto invitedSecret = Protocol::inviteSecret(link);
+    if (invitedSecret.isEmpty()) invitedSecret = Protocol::secret(link);
     if (invitedSecret.isEmpty()) { notice("Link de convite inválido."); return; }
     showNormal(); raise(); activateWindow();
-    if (active_ && invitedSecret == secret_) return;
+#ifdef Q_OS_WIN
+    SetForegroundWindow(reinterpret_cast<HWND>(winId()));
+#endif
+    if (active_ && invitedSecret == secret_) {
+        notice("Você já está conectado nesta sala.");
+        return;
+    }
     if (active_) {
         if (QMessageBox::question(this, "Trocar de sala", "Sair da sala atual e entrar na sala do convite?",
                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) return;

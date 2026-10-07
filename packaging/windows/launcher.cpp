@@ -24,6 +24,61 @@ static DWORD run(std::wstring command, const std::wstring &directory, bool hidde
     DWORD code = 1; GetExitCodeProcess(process.hProcess, &code);
     CloseHandle(process.hThread); CloseHandle(process.hProcess); return code;
 }
+static bool forwardInvite(const std::wstring &tmp, const std::wstring &args) {
+    std::wstring link = args;
+    while (!link.empty() && (link.front() == L' ' || link.front() == L'\"' || link.front() == L'\'')) link.erase(link.begin());
+    while (!link.empty() && (link.back() == L' ' || link.back() == L'\"' || link.back() == L'\'')) link.pop_back();
+    if (link.empty()) return false;
+
+    int len = WideCharToMultiByte(CP_UTF8, 0, link.c_str(), (int)link.size(), nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return false;
+    std::string linkUtf8(len, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, link.c_str(), (int)link.size(), &linkUtf8[0], len, nullptr, nullptr);
+
+    std::error_code ec;
+    for (const auto &entry : std::filesystem::directory_iterator(tmp, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec)) continue;
+        auto fname = entry.path().filename().wstring();
+        if (fname.rfind(L"lazarus-share-", 0) == 0 && fname.rfind(L".endpoint") == fname.size() - 9) {
+            HANDLE f = CreateFileW(entry.path().c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+            if (f == INVALID_HANDLE_VALUE) continue;
+            char buf[256] = {0};
+            DWORD read = 0;
+            ReadFile(f, buf, sizeof(buf) - 1, &read, nullptr);
+            CloseHandle(f);
+            std::string name(buf);
+            while (!name.empty() && (name.back() == '\r' || name.back() == '\n' || name.back() == ' ')) name.pop_back();
+            if (name.empty()) continue;
+
+            std::wstring pipePath = L"\\\\.\\pipe\\" + std::wstring(name.begin(), name.end());
+            HANDLE pipe = CreateFileW(pipePath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+            if (pipe != INVALID_HANDLE_VALUE) {
+                std::string escaped;
+                for (char c : linkUtf8) {
+                    if (c == '\"') escaped += "\\\"";
+                    else if (c == '\\') escaped += "\\\\";
+                    else escaped += c;
+                }
+                std::string msg = "{\"invite\":\"" + escaped + "\"}\n";
+                DWORD written = 0;
+                if (WriteFile(pipe, msg.data(), (DWORD)msg.size(), &written, nullptr)) {
+                    char resp[32] = {0};
+                    DWORD respRead = 0;
+                    ReadFile(pipe, resp, sizeof(resp) - 1, &respRead, nullptr);
+                    CloseHandle(pipe);
+                    if (std::string(resp).find("ok") != std::string::npos) {
+                        AllowSetForegroundWindow(ASFW_ANY);
+                        return true;
+                    }
+                } else {
+                    CloseHandle(pipe);
+                }
+            }
+        }
+    }
+    return false;
+}
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
     // Join the updater-owned job before creating children, so rollback owns the full tree.
     wchar_t jobName[256];
@@ -38,6 +93,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR arguments, int) {
     if (!GetModuleFileNameW(nullptr, launcher, 32768)) return 1;
     SetEnvironmentVariableW(L"LAZARUS_LAUNCHER_PATH", launcher);
     wchar_t tmp[32768]; if (!GetTempPathW(32768, tmp)) return 1;
+    if (arguments && arguments[0] != L'\0' && forwardInvite(tmp, arguments)) return 0;
     unsigned char random[16];
     if (BCryptGenRandom(nullptr, random, sizeof(random), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return 1;
     std::wstring dir = tmp; dir += L"LazarusShare-";

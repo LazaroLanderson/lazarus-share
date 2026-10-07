@@ -13,6 +13,9 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QThread>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 Activation::Activation(QObject *parent, const QString &scope) : QObject(parent) {
     const auto user = QStandardPaths::writableLocation(QStandardPaths::HomeLocation).toUtf8() + scope.toUtf8();
@@ -29,19 +32,31 @@ Activation::Activation(QObject *parent, const QString &scope) : QObject(parent) 
                 if (!socket->canReadLine()) return;
                 const auto doc = QJsonDocument::fromJson(socket->readLine());
                 const auto link = doc.object()["invite"].toString();
-                if (!doc.isObject() || (!link.isEmpty() && Protocol::inviteSecret(link).isEmpty())) { socket->abort(); return; }
+                const auto secret = Protocol::inviteSecret(link).isEmpty() ? Protocol::secret(link) : Protocol::inviteSecret(link);
+                if (!doc.isObject() || (!link.isEmpty() && secret.isEmpty())) { socket->abort(); return; }
                 socket->write("ok\n"); socket->flush(); socket->disconnectFromServer();
                 emit invitation(link);
             });
         }
     });
 }
-Activation::~Activation() { server_.close(); }
+Activation::~Activation() {
+    server_.close();
+    QFile::remove(QDir::tempPath() + "/" + name_ + ".endpoint");
+}
 Activation::Result Activation::start(const QString &invite) {
     if (lock_->tryLock(0)) {
         // Only the process owning the election lock may remove a stale endpoint.
         QLocalServer::removeServer(name_);
-        return server_.listen(name_) ? Result::Receiver : Result::Failed;
+        if (server_.listen(name_)) {
+            QFile endpoint(QDir::tempPath() + "/" + name_ + ".endpoint");
+            if (endpoint.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                endpoint.write(name_.toUtf8() + '\n');
+                endpoint.close();
+            }
+            return Result::Receiver;
+        }
+        return Result::Failed;
     }
     QLocalSocket socket;
     for (int attempt = 0; attempt < 20; ++attempt) {
@@ -53,7 +68,13 @@ Activation::Result Activation::start(const QString &invite) {
     socket.write(QJsonDocument(QJsonObject{{"invite", invite}}).toJson(QJsonDocument::Compact) + '\n');
     if (!socket.waitForBytesWritten(2000)) return Result::Failed;
     if (!socket.canReadLine()) socket.waitForReadyRead(2000);
-    return socket.readLine() == "ok\n" ? Result::Forwarded : Result::Failed;
+    if (socket.readLine() == "ok\n") {
+#ifdef Q_OS_WIN
+        AllowSetForegroundWindow(ASFW_ANY);
+#endif
+        return Result::Forwarded;
+    }
+    return Result::Failed;
 }
 bool Activation::registerProtocol() {
     QString executable = qEnvironmentVariable("LAZARUS_LAUNCHER_PATH");

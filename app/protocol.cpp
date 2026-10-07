@@ -5,6 +5,7 @@
 #include <QRandomGenerator>
 #include <utility>
 #include <QUrl>
+#include <QUrlQuery>
 
 namespace Protocol {
 QByteArray randomBytes(int count) {
@@ -47,11 +48,60 @@ QString inviteLink(const QByteArray &secret, const QString &nickname, int avatar
     return link;
 }
 QByteArray inviteSecret(const QString &input) {
-    const QUrl url(input.trimmed(), QUrl::StrictMode);
-    if (!url.isValid() || !url.userInfo().isEmpty() || url.port() != -1 || url.hasQuery()) return {};
-    const bool https = url.scheme() == "https" && url.host() == "share.app.lazaruslabs.com.br" && url.path() == "/join";
-    const bool native = url.scheme() == "lazarus-share" && url.host() == "join" && url.path().isEmpty();
+    QString raw = input.trimmed();
+    if (raw.isEmpty()) return {};
+    if (raw.contains("%23", Qt::CaseInsensitive)) {
+        raw.replace("%23", "#", Qt::CaseInsensitive);
+    }
+    const QUrl url(raw, QUrl::StrictMode);
+    if (!url.isValid() || !url.userInfo().isEmpty() || url.port() != -1) return {};
+
+    const bool https = url.scheme() == "https" && url.host() == "share.app.lazaruslabs.com.br" && url.path() == "/join" && !url.hasQuery();
+    const bool native = url.scheme() == "lazarus-share" && (url.host() == "join" || url.host().isEmpty());
     if (!https && !native) return {};
+
+    if (https) {
+        QString frag = url.fragment();
+        int sep = frag.indexOf('&');
+        if (sep >= 0) frag = frag.left(sep);
+        return secret(frag);
+    }
+
+    // Native lazarus-share scheme
+    // 1. Check path (e.g. lazarus-share://join/TOKEN or lazarus-share:/join/TOKEN)
+    QString cleanPath = url.path();
+    while (cleanPath.startsWith('/')) cleanPath = cleanPath.mid(1);
+    while (cleanPath.endsWith('/')) cleanPath.chop(1);
+    if (!cleanPath.isEmpty()) {
+        auto parts = cleanPath.split('/');
+        for (const auto &part : parts) {
+            auto s = secret(part);
+            if (!s.isEmpty()) return s;
+        }
+    }
+
+    // If path was something like "/path" that is not a valid token and not empty, reject
+    if (!url.path().isEmpty() && url.path() != "/" && url.path() != "/join") return {};
+
+    // 2. Check query params (e.g. ?token=TOKEN or ?t=TOKEN or ?TOKEN)
+    if (url.hasQuery()) {
+        QUrlQuery q(url);
+        if (q.hasQueryItem("token")) {
+            auto s = secret(q.queryItemValue("token"));
+            if (!s.isEmpty()) return s;
+        }
+        if (q.hasQueryItem("t")) {
+            auto s = secret(q.queryItemValue("t"));
+            if (!s.isEmpty()) return s;
+        }
+        QString qstr = url.query();
+        int sep = qstr.indexOf('&');
+        if (sep >= 0) qstr = qstr.left(sep);
+        auto s = secret(qstr);
+        if (!s.isEmpty()) return s;
+    }
+
+    // 3. Check fragment (e.g. #TOKEN or #TOKEN&nick=...)
     QString frag = url.fragment();
     int sep = frag.indexOf('&');
     if (sep >= 0) frag = frag.left(sep);

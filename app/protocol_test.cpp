@@ -15,6 +15,11 @@ int main(int argc, char **argv) {
     check(richLink.contains("&avatar=2"));
     check(Protocol::inviteSecret(richLink) == key);
     check(Protocol::inviteSecret("lazarus-share://join#" + Protocol::token(key)) == key);
+    check(Protocol::inviteSecret("lazarus-share://join/#" + Protocol::token(key)) == key);
+    check(Protocol::inviteSecret("lazarus-share://join/" + Protocol::token(key)) == key);
+    check(Protocol::inviteSecret("lazarus-share://join/" + Protocol::token(key) + "?nick=Ana") == key);
+    check(Protocol::inviteSecret("lazarus-share://join?token=" + Protocol::token(key)) == key);
+    check(Protocol::inviteSecret("lazarus-share://join%23" + Protocol::token(key)) == key);
     check(Protocol::inviteSecret("lazarus-share://join#" + Protocol::token(key) + "&nick=Ana&avatar=5") == key);
     for (const auto &bad : {Protocol::token(key), QString("https://evil.example/join#") + Protocol::token(key),
          QString("https://share.app.lazaruslabs.com.br/join?token=") + Protocol::token(key),
