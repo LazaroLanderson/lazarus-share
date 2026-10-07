@@ -20,6 +20,7 @@
 #include <map>
 #include <memory>
 class QVBoxLayout;
+class QDialog;
 class Window : public QMainWindow {
     Q_OBJECT
 public:
@@ -96,6 +97,8 @@ private:
     QWidget *createSettingsPage();
     void updateTelemetrySummary();
     void updateRoomIndicators();
+    void openAudioDialog();
+    void createAudioDialog();
     QStackedWidget *stack_ = nullptr;
     int previousPageIndex_ = 0;
     QLabel *headerStatusLabel_ = nullptr;
@@ -107,6 +110,9 @@ private:
     QLabel *inviteHeadingLabel_ = nullptr;
     QLabel *inviteAvatarLabel_ = nullptr;
     QWidget *audioSourcesTray_ = nullptr;
+    QDialog *audioDialog_ = nullptr;
+    QLabel *audioSharingNotice_ = nullptr;
+    QLabel *audioEmptyNotice_ = nullptr;
     QWidget *customQualityPanel_ = nullptr;
     bool prepAudioEnabled_ = false;
     QList<QWidget *> screenCards_;
@@ -116,7 +122,7 @@ private:
     bool roomRequiresApproval_ = true;
     QString endpoint_, stun_, tlsPin_;
     QComboBox *monitor_, *preset_;
-    QPushButton *identity_, *share_, *pause_, *change_;
+    QPushButton *identity_, *share_, *pause_, *change_, *audioBtn_;
     Profile profile_;
     DiagnosticLog log_;
     QSpinBox *width_, *height_, *fps_, *bitrate_;

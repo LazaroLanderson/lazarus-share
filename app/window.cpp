@@ -674,16 +674,17 @@ QWidget *Window::createPrepPage() {
     trayDivider->setStyleSheet("color: #EAE8DE;");
     astLayout->addWidget(trayDivider);
 
-    audioStatus_ = new QLabel(audio_.supported() ? "Áudio do sistema e aplicativos disponíveis." : audio_.limitation(), audioSourcesTray_);
-    audioStatus_->setObjectName("audioStatus");
-    audioStatus_->setFont(Theme::bodyFont(9));
-    audioStatus_->setStyleSheet("color: #4C4546;");
-    astLayout->addWidget(audioStatus_);
+    auto *prepTrayDesc = new QLabel("O Lazarus Share permite isolar e transmitir apenas os aplicativos que você marcar.", audioSourcesTray_);
+    prepTrayDesc->setFont(Theme::bodyFont(9));
+    prepTrayDesc->setStyleSheet("color: #4C4546; border: none;");
+    prepTrayDesc->setWordWrap(true);
+    astLayout->addWidget(prepTrayDesc);
 
-    apps_ = new QListWidget(audioSourcesTray_);
-    apps_->setObjectName("apps");
-    apps_->setFixedHeight(90);
-    astLayout->addWidget(apps_);
+    auto *prepAudioBtn = new QPushButton("Selecionar programas com áudio...", audioSourcesTray_);
+    prepAudioBtn->setIcon(Theme::icon("volume_up", Theme::Primary, 14));
+    prepAudioBtn->setStyleSheet("QPushButton { background-color: #FFFFFF; color: #1B1C16; border: 1.5px solid #EAE8DE; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 11px; text-align: left; } QPushButton:hover { background-color: #F6F4E9; }");
+    connect(prepAudioBtn, &QPushButton::clicked, this, &Window::openAudioDialog);
+    astLayout->addWidget(prepAudioBtn);
 
     audioSourcesTray_->hide();
     acLayout->addWidget(audioSourcesTray_);
@@ -1056,6 +1057,13 @@ QWidget *Window::createRoomPage() {
     fbLayout->addWidget(share_);
     fbLayout->addWidget(pause_);
     fbLayout->addWidget(change_);
+
+    audioBtn_ = new QPushButton("Áudio do sistema", floatingBar);
+    audioBtn_->setObjectName("btn-select-audio");
+    audioBtn_->setIcon(Theme::icon("volume_up", Theme::Primary, 14));
+    audioBtn_->setStyleSheet("QPushButton { background-color: #F0EEE3; color: #1B1C16; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; } QPushButton:disabled { background-color: #F6F4E9; color: #A09E94; border: 1px solid #EAE8DE; }");
+    connect(audioBtn_, &QPushButton::clicked, this, &Window::openAudioDialog);
+    fbLayout->addWidget(audioBtn_);
 
     stop_ = new QPushButton("Encerrar / sair", floatingBar);
     stop_->setObjectName("btn-exit-room");
@@ -1460,6 +1468,122 @@ QWidget *Window::createSettingsPage() {
     return scroll;
 }
 
+void Window::createAudioDialog() {
+    audioDialog_ = new QDialog(this);
+    audioDialog_->setWindowTitle("Transmitir áudio do computador");
+    audioDialog_->setMinimumWidth(480);
+    audioDialog_->setStyleSheet("QDialog { background-color: #FCFAEF; }");
+    auto *layout = new QVBoxLayout(audioDialog_);
+    layout->setContentsMargins(24, 20, 24, 20);
+    layout->setSpacing(14);
+
+    auto *headerLayout = new QHBoxLayout;
+    headerLayout->setSpacing(12);
+
+    auto *iconBadge = new QLabel(audioDialog_);
+    iconBadge->setFixedSize(40, 40);
+    iconBadge->setStyleSheet("background-color: #F0EEE3; border: 1px solid #E4E3D8; border-radius: 10px;");
+    iconBadge->setAlignment(Qt::AlignCenter);
+    iconBadge->setPixmap(Theme::icon("volume_up", Theme::Primary, 20).pixmap(20, 20));
+    headerLayout->addWidget(iconBadge);
+
+    auto *titleLayout = new QVBoxLayout;
+    titleLayout->setSpacing(2);
+    auto *titleLbl = new QLabel("Transmitir áudio dos aplicativos", audioDialog_);
+    titleLbl->setFont(Theme::headlineFont(13, QFont::Bold));
+    titleLbl->setStyleSheet("color: #000000; border: none;");
+    titleLayout->addWidget(titleLbl);
+    auto *subLbl = new QLabel("Selecione quais programas terão o som transmitido para os participantes:", audioDialog_);
+    subLbl->setFont(Theme::bodyFont(9));
+    subLbl->setStyleSheet("color: #4C4546; border: none;");
+    titleLayout->addWidget(subLbl);
+    headerLayout->addLayout(titleLayout, 1);
+    layout->addLayout(headerLayout);
+
+    auto *statusCard = new QFrame(audioDialog_);
+    statusCard->setStyleSheet("background-color: #FFFFFF; border: 1px solid #EAE8DE; border-radius: 8px; padding: 4px;");
+    auto *scLayout = new QHBoxLayout(statusCard);
+    scLayout->setContentsMargins(12, 8, 12, 8);
+    auto *statusIcon = new QLabel(statusCard);
+    statusIcon->setPixmap(Theme::icon("security", Theme::SecondaryDark, 14).pixmap(14, 14));
+    statusIcon->setStyleSheet("border: none;");
+    scLayout->addWidget(statusIcon);
+    audioStatus_ = new QLabel(audio_.supported() ? "Áudio do sistema e aplicativos disponíveis." : audio_.limitation(), statusCard);
+    audioStatus_->setObjectName("audioStatus");
+    audioStatus_->setFont(Theme::bodyFont(9, QFont::Bold));
+    audioStatus_->setStyleSheet("color: #006C4F; border: none;");
+    scLayout->addWidget(audioStatus_, 1);
+    layout->addWidget(statusCard);
+
+    audioSharingNotice_ = new QLabel("Dica: Inicie o compartilhamento de tela para que os sons dos programas em execução apareçam nesta lista para você selecionar.", audioDialog_);
+    audioSharingNotice_->setFont(Theme::bodyFont(9));
+    audioSharingNotice_->setStyleSheet("background-color: #F0EEE3; color: #4C4546; border: 1px solid #EAE8DE; border-radius: 8px; padding: 10px;");
+    audioSharingNotice_->setWordWrap(true);
+    layout->addWidget(audioSharingNotice_);
+
+    apps_ = new QListWidget(audioDialog_);
+    apps_->setObjectName("apps");
+    apps_->setMinimumHeight(180);
+    apps_->setStyleSheet("QListWidget#apps { background-color: #FFFFFF; border: 1.5px solid #EAE8DE; border-radius: 8px; padding: 6px; font-size: 11px; } QListWidget#apps::item { padding: 6px 8px; border-radius: 4px; } QListWidget#apps::item:hover { background-color: #F6F4E9; }");
+    layout->addWidget(apps_);
+
+    audioEmptyNotice_ = new QLabel("Nenhum aplicativo com som ativo encontrado no momento.\nAbra seu navegador, reprodutor ou jogo com áudio e clique em 'Atualizar lista'.", audioDialog_);
+    audioEmptyNotice_->setFont(Theme::bodyFont(9));
+    audioEmptyNotice_->setStyleSheet("color: #7E7576; padding: 12px; border: none;");
+    audioEmptyNotice_->setAlignment(Qt::AlignCenter);
+    layout->addWidget(audioEmptyNotice_);
+
+    auto *actionsLayout = new QHBoxLayout;
+    actionsLayout->setSpacing(8);
+
+    auto *selectAllBtn = new QPushButton("Marcar todos", audioDialog_);
+    selectAllBtn->setStyleSheet("background-color: #FFFFFF; color: #1B1C16; border: 1px solid #EAE8DE; border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: 600;");
+    connect(selectAllBtn, &QPushButton::clicked, this, [this] {
+        for (int i = 0; i < apps_->count(); ++i) apps_->item(i)->setCheckState(Qt::Checked);
+        selectAudio();
+    });
+    actionsLayout->addWidget(selectAllBtn);
+
+    auto *unselectAllBtn = new QPushButton("Desmarcar todos (Mudo)", audioDialog_);
+    unselectAllBtn->setStyleSheet("background-color: #FFFFFF; color: #1B1C16; border: 1px solid #EAE8DE; border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: 600;");
+    connect(unselectAllBtn, &QPushButton::clicked, this, [this] {
+        for (int i = 0; i < apps_->count(); ++i) apps_->item(i)->setCheckState(Qt::Unchecked);
+        selectAudio();
+    });
+    actionsLayout->addWidget(unselectAllBtn);
+
+    auto *refreshBtn = new QPushButton("Atualizar lista", audioDialog_);
+    refreshBtn->setIcon(Theme::icon("tune", Theme::Primary, 12));
+    refreshBtn->setStyleSheet("background-color: #FFFFFF; color: #1B1C16; border: 1px solid #EAE8DE; border-radius: 6px; padding: 6px 10px; font-size: 11px; font-weight: 600;");
+    connect(refreshBtn, &QPushButton::clicked, this, [this] {
+        refreshAudio();
+        if (audioEmptyNotice_) audioEmptyNotice_->setVisible(sharing_ && apps_->count() == 0);
+    });
+    actionsLayout->addWidget(refreshBtn);
+    actionsLayout->addStretch();
+    layout->addLayout(actionsLayout);
+
+    auto *btnBox = new QHBoxLayout;
+    btnBox->addStretch();
+    auto *doneBtn = new QPushButton("Concluir", audioDialog_);
+    doneBtn->setStyleSheet("QPushButton { background-color: #000000; color: #FFFFFF; font-weight: 700; border-radius: 6px; padding: 8px 24px; font-size: 12px; border: none; } QPushButton:hover { background-color: #1B1B1B; }");
+    connect(doneBtn, &QPushButton::clicked, audioDialog_, &QDialog::accept);
+    btnBox->addWidget(doneBtn);
+    layout->addLayout(btnBox);
+}
+
+void Window::openAudioDialog() {
+    if (!audioDialog_) return;
+    refreshAudio();
+    if (audioSharingNotice_) {
+        audioSharingNotice_->setVisible(!sharing_);
+    }
+    if (audioEmptyNotice_) {
+        audioEmptyNotice_->setVisible(sharing_ && apps_->count() == 0);
+    }
+    audioDialog_->exec();
+}
+
 Window::Window(bool onboarding) : capture_(this), audio_(this) {
     profile_ = Profile::load();
     setWindowTitle("Lazarus Share — sem login");
@@ -1467,6 +1591,8 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     setMinimumSize(960, 680);
     resize(1140, 800);
     time_.start();
+
+    createAudioDialog();
 
     auto *root = new QWidget(this);
     auto *rootLayout = new QVBoxLayout(root);
@@ -1528,6 +1654,7 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
     share_->setEnabled(false);
     pause_->setEnabled(false);
     change_->setEnabled(false);
+    if (audioBtn_) audioBtn_->setEnabled(false);
 
     connect(viewerPanel_, &ViewerPanel::playbackChanged, this, [this] {
         for (auto &[id, c] : peers_) if (c->media) c->media->playbackVolume(viewerPanel_->volume(), viewerPanel_->muted());
@@ -1553,6 +1680,10 @@ Window::Window(bool onboarding) : capture_(this), audio_(this) {
         if (!active_ || !sender() || !capturePending_) { capture_.stop(); return; }
         capturePending_ = false; sharing_ = true; share_->setEnabled(false); pause_->setEnabled(true); change_->setEnabled(true);
         capture_.quality(quality()); refreshAudio(); log("sharing_started", {}, {{"preset",preset_->currentIndex()},{"width",capture_.dimensions().width()},{"height",capture_.dimensions().height()},{"target_fps",quality().fps},{"target_kbps",quality().kbps}});
+        if (prepAudioEnabled_ && audio_.selected().isEmpty() && apps_->count() > 0) {
+            for (int i = 0; i < apps_->count(); ++i) apps_->item(i)->setCheckState(Qt::Checked);
+            selectAudio();
+        }
         send({{"type","share-confirm"},{"revision",revision_}});
         for(auto &[id,c]:peers_)if(!c->session.isEmpty())restart(id,-1);
         updatePresentation();
@@ -1678,6 +1809,7 @@ void Window::stop() {
     requireApproval_->setEnabled(true); requireApproval_->setChecked(false); approve_->hide();
     secret_.fill(0); secret_.clear(); room_.clear(); admin_.clear(); token_->clear(); token_->setReadOnly(false);
     create_->setEnabled(profile_.valid()); join_->setEnabled(profile_.valid()); stop_->setEnabled(false); share_->setEnabled(false);
+    if (audioBtn_) { audioBtn_->setEnabled(false); audioBtn_->setText("Áudio do sistema"); }
     viewerPanel_->clearFrame("Sessão encerrada."); metrics_->setText("Upload: 0 kbps"); notice("Sessão encerrada.");
     showPage(0);
 }
@@ -1991,12 +2123,14 @@ void Window::refreshAudio() {
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable); item->setCheckState(checked.contains(a.id) ? Qt::Checked : Qt::Unchecked);
     }
     apps_->setEnabled(sender() && active_ && sharing_ && audio_.supported()); refreshingAudio_ = false;
+    if (audioEmptyNotice_) audioEmptyNotice_->setVisible(sharing_ && apps_->count() == 0);
 }
 void Window::selectAudio() {
     if (refreshingAudio_ || !sender() || !active_ || !sharing_) return;
     QSet<QString> selected;
     for (int i = 0; i < apps_->count(); ++i) if (apps_->item(i)->checkState() == Qt::Checked) selected.insert(apps_->item(i)->data(Qt::UserRole).toString());
     audio_.select(selected); refreshAudio(); audioStatus_->setText(audio_.selected().isEmpty() ? "Áudio desligado." : "Transmitindo somente os aplicativos marcados.");
+    updatePresentation();
 }
 void Window::diagnostics() {
     QJsonObject report{{"version", LAZARUS_VERSION}, {"events", log_.events()}, {"profile", profile_.json()}};
@@ -2078,6 +2212,7 @@ void Window::stopSharing() {
     capture_.stop(); audio_.stop();
     if (sender()) for (auto &[id,c] : peers_) { c->renewal.cancel();c->relayRequested=false;c->pendingRestart=0;c->pendingSignals={};++c->generation;++c->selection;c->selecting=false;c->media.reset(); c->kbps = 0; c->exhausted = false;c->route="Aguardando compartilhamento";c->metrics={{"stage","paused"},{"video_fps",0},{"kbps",0},{"selected_pair",false}};row(id,c->route); }
     share_->setEnabled(active_ && admitted_ && broadcaster_.isEmpty() && socketLost_<0); pause_->setEnabled(false); change_->setEnabled(false); refreshAudio();
+    updatePresentation();
     if (previous) { log("sharing_stopped"); metrics_->setText("Sem compartilhamento | upload 0 kbps"); notice("Compartilhamento parado. A sala continua aberta."); }
 }
 void Window::restart(const QString &id, int transport) {
@@ -2130,6 +2265,23 @@ void Window::updatePresentation() {
     viewerPanel_->presentation(state,name,avatar);
     share_->setEnabled(active_ && admitted_ && broadcaster_.isEmpty() && !shareRequested_ && socketLost_<0);
     pause_->setEnabled(sender()); change_->setEnabled(sender() && sharing_);
+    if (audioBtn_) {
+        audioBtn_->setVisible(sender());
+        audioBtn_->setEnabled(sender() && audio_.supported());
+        if (sharing_) {
+            int count = audio_.selected().size();
+            if (count > 0) {
+                audioBtn_->setText(QString("Áudio (%1 app%2)").arg(count).arg(count > 1 ? "s" : ""));
+                audioBtn_->setIcon(Theme::icon("volume_up", Theme::Primary, 14));
+            } else {
+                audioBtn_->setText("Áudio (Mudo)");
+                audioBtn_->setIcon(Theme::icon("volume_off", Theme::Primary, 14));
+            }
+        } else {
+            audioBtn_->setText("Áudio do sistema");
+            audioBtn_->setIcon(Theme::icon("volume_up", Theme::Primary, 14));
+        }
+    }
     remove_->setVisible(administrator_); approve_->setVisible(administrator_ && roomRequiresApproval_);
     updateRoomIndicators();
 }
