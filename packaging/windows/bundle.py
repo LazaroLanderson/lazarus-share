@@ -27,6 +27,10 @@ if not a.tool_prefix:
 else:
     for group in ("platforms", "tls"):
         shutil.copytree(prefix / "share/qt6/plugins" / group, app / group, dirs_exist_ok=True)
+for group in ("imageformats", "iconengines"):
+    src = prefix / "share/qt6/plugins" / group
+    if src.exists():
+        shutil.copytree(src, app / group, dirs_exist_ok=True)
 shutil.copy2(a.updater, app / "lazarus-updater.exe")
 queue = list(app.rglob("*.dll")) + [app / "lazarus-share.exe", app / "lazarus-updater.exe"]
 scanner = prefix / "libexec/gstreamer-1.0/gst-plugin-scanner.exe"

@@ -32,11 +32,8 @@ bool editProfile(Profile &profile, QWidget *parent) {
     QDialog dialog(parent);
     dialog.setWindowTitle("Seu Perfil — Lazarus Share");
     dialog.setObjectName("profileDialog");
-    dialog.setStyleSheet("QDialog#profileDialog, QDialog { background-color: #FCFAEF; } QWidget#profileContent { background-color: #FCFAEF; } QScrollArea { background-color: #FCFAEF; border: none; }");
-    dialog.setAutoFillBackground(true);
-    QPalette pal = dialog.palette();
-    pal.setColor(QPalette::Window, QColor("#FCFAEF"));
-    dialog.setPalette(pal);
+    Theme::setupDialog(&dialog);
+    dialog.setStyleSheet("QDialog#profileDialog, QDialog { background-color: #FCFAEF; } QWidget#profileContent { background-color: #FCFAEF; } QScrollArea, QScrollArea > QWidget > QWidget { background-color: #FCFAEF; border: none; }");
     dialog.resize(500, 540);
     dialog.setMinimumSize(420, 420);
 
@@ -48,9 +45,19 @@ bool editProfile(Profile &profile, QWidget *parent) {
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setStyleSheet("QScrollArea { background-color: #FCFAEF; border: none; }");
+    if (scroll->viewport()) {
+        scroll->viewport()->setAutoFillBackground(true);
+        QPalette vp = scroll->viewport()->palette();
+        vp.setColor(QPalette::Window, Theme::Background);
+        scroll->viewport()->setPalette(vp);
+    }
 
     auto *content = new QWidget(scroll);
     content->setObjectName("profileContent");
+    content->setAutoFillBackground(true);
+    QPalette cp = content->palette();
+    cp.setColor(QPalette::Window, Theme::Background);
+    content->setPalette(cp);
     auto *layout = new QVBoxLayout(content);
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(12);

@@ -6,6 +6,7 @@
 #include <QPixmap>
 
 class QApplication;
+class QDialog;
 
 class Theme {
 public:
@@ -38,6 +39,7 @@ public:
     // Styling
     static void apply(QApplication &app);
     static QString globalStyleSheet();
+    static void setupDialog(QDialog *dialog);
 
     // Icon helpers
     static QIcon icon(const QString &name, const QColor &color = OnSurface, int size = 20);

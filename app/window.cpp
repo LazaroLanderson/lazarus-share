@@ -151,29 +151,35 @@ QWidget *Window::createHeaderWidget() {
     auto *windowControls = new QHBoxLayout;
     windowControls->setSpacing(4);
 
-    minBtn_ = new QPushButton("—", header);
+    minBtn_ = new QPushButton(header);
     minBtn_->setObjectName("btnMinimize");
     minBtn_->setFixedSize(30, 30);
+    minBtn_->setIcon(Theme::icon("minimize", Theme::OnSurface, 12));
+    minBtn_->setIconSize(QSize(12, 12));
     minBtn_->setToolTip("Minimizar");
-    minBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; font-weight: bold; color: #1B1C16; font-size: 11px; } QPushButton:hover { background-color: #EAE8DE; }");
+    minBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; } QPushButton:hover { background-color: #EAE8DE; }");
     connect(minBtn_, &QPushButton::clicked, this, &Window::showMinimized);
     windowControls->addWidget(minBtn_);
 
-    maxBtn_ = new QPushButton(isMaximized() ? "❐" : "□", header);
+    maxBtn_ = new QPushButton(header);
     maxBtn_->setObjectName("btnMaximize");
     maxBtn_->setFixedSize(30, 30);
+    maxBtn_->setIcon(Theme::icon(isMaximized() ? "restore" : "maximize", Theme::OnSurface, 12));
+    maxBtn_->setIconSize(QSize(12, 12));
     maxBtn_->setToolTip("Maximizar / Restaurar");
-    maxBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; color: #1B1C16; font-size: 12px; } QPushButton:hover { background-color: #EAE8DE; }");
+    maxBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; } QPushButton:hover { background-color: #EAE8DE; }");
     connect(maxBtn_, &QPushButton::clicked, this, [this] {
         if (isMaximized()) showNormal(); else showMaximized();
     });
     windowControls->addWidget(maxBtn_);
 
-    closeBtn_ = new QPushButton("✕", header);
+    closeBtn_ = new QPushButton(header);
     closeBtn_->setObjectName("btnClose");
     closeBtn_->setFixedSize(30, 30);
+    closeBtn_->setIcon(Theme::icon("close", Theme::OnSurface, 12));
+    closeBtn_->setIconSize(QSize(12, 12));
     closeBtn_->setToolTip("Fechar");
-    closeBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; color: #1B1C16; font-size: 11px; font-weight: bold; } QPushButton:hover { background-color: #FFDAD6; color: #BA1A1A; }");
+    closeBtn_->setStyleSheet("QPushButton { background: transparent; border: none; border-radius: 6px; } QPushButton:hover { background-color: #FFDAD6; }");
     connect(closeBtn_, &QPushButton::clicked, this, &Window::close);
     windowControls->addWidget(closeBtn_);
 
@@ -223,13 +229,13 @@ QWidget *Window::createHomePage() {
     heroLayout->setAlignment(Qt::AlignCenter);
     heroLayout->setSpacing(2);
 
-    auto *heroTitle = new QLabel("Compartilhe sua tela com segurança", heroWidget);
+    auto *heroTitle = new QLabel("Compartilhe sua tela instantaneamente", heroWidget);
     heroTitle->setFont(Theme::headlineFont(18, QFont::Bold));
     heroTitle->setStyleSheet("color: #000000; border: none;");
     heroTitle->setAlignment(Qt::AlignCenter);
     heroLayout->addWidget(heroTitle, 0, Qt::AlignCenter);
 
-    auto *heroSubtitle = new QLabel("Criptografia ponta a ponta • sem gravação • até 4 pessoas", heroWidget);
+    auto *heroSubtitle = new QLabel("P2P privado · sem gravação · até 4 espectadores", heroWidget);
     heroSubtitle->setFont(Theme::bodyFont(10));
     heroSubtitle->setStyleSheet("color: #4C4546; border: none;");
     heroSubtitle->setAlignment(Qt::AlignCenter);
@@ -298,11 +304,34 @@ QWidget *Window::createHomePage() {
     });
     card1Layout->addWidget(startShareBtn);
 
-    auto *card1Footnote = new QLabel("Sem limite de duração da chamada", card1);
-    card1Footnote->setFont(Theme::bodyFont(8));
-    card1Footnote->setStyleSheet("color: #7E7576; border: none;");
-    card1Footnote->setAlignment(Qt::AlignCenter);
-    card1Layout->addWidget(card1Footnote);
+    // Benefícios embutidos Card 1
+    auto *card1Benefits = new QWidget(card1);
+    auto *c1bLayout = new QHBoxLayout(card1Benefits);
+    c1bLayout->setContentsMargins(0, 4, 0, 2);
+    c1bLayout->setSpacing(6);
+    c1bLayout->setAlignment(Qt::AlignCenter);
+
+    auto addCard1Benefit = [&](const QString &icon, const QString &text) {
+        auto *ico = new QLabel(card1Benefits);
+        ico->setPixmap(Theme::icon(icon, Theme::SecondaryDark, 12).pixmap(12, 12));
+        c1bLayout->addWidget(ico);
+        auto *lbl = new QLabel(text, card1Benefits);
+        lbl->setFont(Theme::codeFont(8));
+        lbl->setStyleSheet("color: #4C4546; font-weight: 600; border: none;");
+        c1bLayout->addWidget(lbl);
+    };
+
+    addCard1Benefit("bolt", "Baixa latência");
+    auto *dot1 = new QLabel("·", card1Benefits);
+    dot1->setStyleSheet("color: #CFD0C5; font-weight: bold;");
+    c1bLayout->addWidget(dot1);
+    addCard1Benefit("volume_up", "Áudio");
+    auto *dot2 = new QLabel("·", card1Benefits);
+    dot2->setStyleSheet("color: #CFD0C5; font-weight: bold;");
+    c1bLayout->addWidget(dot2);
+    addCard1Benefit("monitor", "4K / 60 FPS");
+
+    card1Layout->addWidget(card1Benefits);
     cardsLayout->addWidget(card1, 1);
 
     // CARD 2: Assistir a uma Tela
@@ -371,60 +400,55 @@ QWidget *Window::createHomePage() {
     join_->setStyleSheet("QPushButton { background-color: #EAE8DE; color: #000000; font-weight: 700; font-size: 12px; border-radius: 8px; padding: 10px; border: 1px solid #E4E3D8; } QPushButton:hover { background-color: #E4E3D8; }");
     card2Layout->addWidget(join_);
 
-    auto *card2Footnote = new QLabel("Acesso imediato para assistir", card2);
-    card2Footnote->setFont(Theme::bodyFont(8));
-    card2Footnote->setStyleSheet("color: #7E7576; border: none;");
-    card2Footnote->setAlignment(Qt::AlignCenter);
-    card2Layout->addWidget(card2Footnote);
+    // Benefícios embutidos Card 2
+    auto *card2Benefits = new QWidget(card2);
+    auto *c2bLayout = new QHBoxLayout(card2Benefits);
+    c2bLayout->setContentsMargins(0, 4, 0, 2);
+    c2bLayout->setSpacing(6);
+    c2bLayout->setAlignment(Qt::AlignCenter);
+
+    auto addCard2Benefit = [&](const QString &icon, const QString &text) {
+        auto *ico = new QLabel(card2Benefits);
+        ico->setPixmap(Theme::icon(icon, Theme::SecondaryDark, 12).pixmap(12, 12));
+        c2bLayout->addWidget(ico);
+        auto *lbl = new QLabel(text, card2Benefits);
+        lbl->setFont(Theme::codeFont(8));
+        lbl->setStyleSheet("color: #4C4546; font-weight: 600; border: none;");
+        c2bLayout->addWidget(lbl);
+    };
+
+    addCard2Benefit("globe", "Direto no navegador");
+    auto *dot3 = new QLabel("·", card2Benefits);
+    dot3->setStyleSheet("color: #CFD0C5; font-weight: bold;");
+    c2bLayout->addWidget(dot3);
+    addCard2Benefit("lock", "P2P privado");
+
+    card2Layout->addWidget(card2Benefits);
     cardsLayout->addWidget(card2, 1);
     layout->addLayout(cardsLayout);
 
-    // Micro Technical Specs Ribbon em Linha Única
-    auto *ribbonBar = new QFrame(page);
-    ribbonBar->setObjectName("homeRibbonBar");
-    ribbonBar->setStyleSheet("QFrame#homeRibbonBar { background-color: #F6F4E9; border-radius: 8px; border: 1px solid #EAE8DE; }");
-    auto *rbLayout = new QHBoxLayout(ribbonBar);
-    rbLayout->setContentsMargins(14, 6, 14, 6);
-    rbLayout->setSpacing(12);
-
-    auto addSpec = [&](const QString &icon, const QString &text) {
-        auto *item = new QWidget(ribbonBar);
-        auto *il = new QHBoxLayout(item);
-        il->setContentsMargins(0, 0, 0, 0);
-        il->setSpacing(6);
-        auto *ico = new QLabel(item);
-        ico->setPixmap(Theme::icon(icon, Theme::Primary, 14).pixmap(14, 14));
-        il->addWidget(ico);
-        auto *lbl = new QLabel(text, item);
-        lbl->setFont(Theme::codeFont(9));
-        lbl->setStyleSheet("color: #1B1C16; font-weight: 600; border: none;");
-        il->addWidget(lbl);
-        rbLayout->addWidget(item);
-    };
-
-    rbLayout->addStretch();
-    addSpec("bolt", "Tempo real (sem atraso)");
-    rbLayout->addWidget(new QLabel("•", ribbonBar));
-    addSpec("security", "Criptografia Ponta a Ponta");
-    rbLayout->addWidget(new QLabel("•", ribbonBar));
-    addSpec("volume_up", "Áudio do computador");
-    rbLayout->addWidget(new QLabel("•", ribbonBar));
-    addSpec("monitor", "Até 4K / 60 FPS");
-    rbLayout->addStretch();
-    layout->addWidget(ribbonBar);
+    layout->addStretch();
 
     auto *footer = new QWidget(page);
     auto *footerLayout = new QHBoxLayout(footer);
-    footerLayout->setContentsMargins(0, 6, 0, 0);
+    footerLayout->setContentsMargins(0, 8, 0, 0);
 
-    auto *coreVer = new QLabel("Lazarus Share v0.3.0", footer);
+#ifdef LAZARUS_VERSION
+    const QString versionStr = !QCoreApplication::applicationVersion().isEmpty() ? QCoreApplication::applicationVersion() : QString(LAZARUS_VERSION);
+#else
+    const QString versionStr = !QCoreApplication::applicationVersion().isEmpty() ? QCoreApplication::applicationVersion() : "0.3.4";
+#endif
+    if (QCoreApplication::applicationVersion().isEmpty()) {
+        QCoreApplication::setApplicationVersion(versionStr);
+    }
+    auto *coreVer = new QLabel(QString("LAZARUS SHARE v%1").arg(versionStr), footer);
     coreVer->setFont(Theme::codeFont(9));
-    coreVer->setStyleSheet("color: #7E7576; text-transform: uppercase; border: none;");
+    coreVer->setStyleSheet("color: #7E7576; text-transform: uppercase; border: none; letter-spacing: 0.5px;");
     footerLayout->addWidget(coreVer);
 
     footerLayout->addStretch();
 
-    status_ = new QLabel("Pronto. Suas transmissões são privadas e não são gravadas.", footer);
+    status_ = new QLabel("🔒 Suas transmissões são privadas e não são gravadas.", footer);
     status_->setObjectName("status");
     status_->setFont(Theme::bodyFont(9));
     status_->setStyleSheet("color: #7E7576; border: none;");
@@ -1502,6 +1526,8 @@ QWidget *Window::createSettingsPage() {
 void Window::createAudioDialog() {
     audioDialog_ = new QDialog(this);
     audioDialog_->setWindowTitle("Transmitir áudio do computador");
+    audioDialog_->setObjectName("audioDialog");
+    Theme::setupDialog(audioDialog_);
     audioDialog_->setMinimumWidth(480);
     audioDialog_->setStyleSheet("QDialog { background-color: #FCFAEF; }");
     auto *layout = new QVBoxLayout(audioDialog_);
@@ -2240,7 +2266,11 @@ void Window::share() {
         return;
     }
     const auto reservation=revision_;
-    QDialog dialog(this); dialog.setWindowTitle("Compartilhar tela"); auto *layout = new QVBoxLayout(&dialog);
+    QDialog dialog(this);
+    dialog.setWindowTitle("Compartilhar tela");
+    dialog.setObjectName("shareScreenDialog");
+    Theme::setupDialog(&dialog);
+    auto *layout = new QVBoxLayout(&dialog);
     auto *monitor = new QComboBox; monitor->addItems([this] { QStringList names; for (int i=0;i<monitor_->count();++i) names << monitor_->itemText(i); return names; }()); monitor->setCurrentIndex(monitor_->currentIndex());
     bool portal = qEnvironmentVariable("XDG_SESSION_TYPE") == "wayland" || !qEnvironmentVariable("WAYLAND_DISPLAY").isEmpty();
 #ifdef Q_OS_WIN
@@ -2414,7 +2444,7 @@ void Window::mouseDoubleClickEvent(QMouseEvent *event) {
 
 void Window::changeEvent(QEvent *event) {
     if (event->type() == QEvent::WindowStateChange) {
-        if (maxBtn_) maxBtn_->setText(isMaximized() ? "❐" : "□");
+        if (maxBtn_) maxBtn_->setIcon(Theme::icon(isMaximized() ? "restore" : "maximize", Theme::OnSurface, 12));
     }
     QMainWindow::changeEvent(event);
 }

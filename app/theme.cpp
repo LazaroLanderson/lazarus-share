@@ -9,6 +9,11 @@
 #include <QFileInfo>
 #include <QPalette>
 #include <QCoreApplication>
+#include <QDialog>
+#include <QTimer>
+#include <QWindow>
+#include <QScreen>
+#include <QEvent>
 
 static QString s_headlineFamily = "Space Grotesk";
 static QString s_bodyFamily = "Geist";
@@ -245,7 +250,8 @@ QIcon Theme::icon(const QString &name, const QColor &color, int size) {
     pixmap.fill(Qt::transparent);
     QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(color, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    const qreal penWidth = size <= 14 ? 1.3 : 1.8;
+    p.setPen(QPen(color, penWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
 
     const qreal s = size;
@@ -359,6 +365,10 @@ QIcon Theme::icon(const QString &name, const QColor &color, int size) {
     } else if (name == "lock") {
         p.drawRoundedRect(QRectF(pad + 1, s / 2 - 1, w - 2, h * 0.55), 2, 2);
         p.drawArc(QRectF(pad + w * 0.22, pad, w * 0.56, h * 0.55), 0, 180 * 16);
+    } else if (name == "globe" || name == "browser" || name == "language") {
+        p.drawEllipse(QPointF(s / 2, s / 2), w * 0.48, h * 0.48);
+        p.drawLine(QPointF(pad, s / 2), QPointF(s - pad, s / 2));
+        p.drawEllipse(QPointF(s / 2, s / 2), w * 0.22, h * 0.48);
     } else if (name == "security") {
         QPainterPath shield;
         shield.moveTo(pad + 1, pad + 2);
@@ -372,8 +382,19 @@ QIcon Theme::icon(const QString &name, const QColor &color, int size) {
         p.drawLine(QPointF(pad + 1, s / 2), QPointF(pad + w * 0.38, s - pad - 2));
         p.drawLine(QPointF(pad + w * 0.38, s - pad - 2), QPointF(s - pad, pad + 2));
     } else if (name == "close") {
-        p.drawLine(QPointF(pad + 2, pad + 2), QPointF(s - pad - 2, s - pad - 2));
-        p.drawLine(QPointF(s - pad - 2, pad + 2), QPointF(pad + 2, s - pad - 2));
+        p.drawLine(QPointF(pad + 1, pad + 1), QPointF(s - pad - 1, s - pad - 1));
+        p.drawLine(QPointF(s - pad - 1, pad + 1), QPointF(pad + 1, s - pad - 1));
+    } else if (name == "minimize") {
+        p.drawLine(QPointF(pad + 0.5, s / 2), QPointF(s - pad - 0.5, s / 2));
+    } else if (name == "maximize") {
+        p.drawRoundedRect(QRectF(pad + 0.5, pad + 0.5, w - 1.0, h - 1.0), 1.0, 1.0);
+    } else if (name == "restore") {
+        const qreal offset = 2.2;
+        p.drawLine(QPointF(pad + offset, pad), QPointF(s - pad, pad));
+        p.drawLine(QPointF(s - pad, pad), QPointF(s - pad, s - pad - offset));
+        p.drawLine(QPointF(s - pad - offset, s - pad - offset), QPointF(s - pad, s - pad - offset));
+        p.drawLine(QPointF(pad + offset, pad), QPointF(pad + offset, pad + offset));
+        p.drawRoundedRect(QRectF(pad, pad + offset, w - offset, h - offset), 0.8, 0.8);
     } else if (name == "fullscreen") {
         p.drawLine(QPointF(pad, pad + 4), QPointF(pad, pad));
         p.drawLine(QPointF(pad, pad), QPointF(pad + 4, pad));
@@ -648,6 +669,78 @@ QString Theme::globalStyleSheet() {
     )");
 }
 
+namespace {
+class DialogEventFilter : public QObject {
+public:
+    using QObject::QObject;
+protected:
+    bool eventFilter(QObject *obj, QEvent *ev) override {
+        auto *w = static_cast<QWidget *>(obj);
+        if (ev->type() == QEvent::Paint) {
+            QPainter p(w);
+            p.fillRect(w->rect(), Theme::Background);
+        } else if (ev->type() == QEvent::Show) {
+            // Under Wayland compositors (such as COSMIC smithay), decoration changes
+            // and configure events occur right after mapping.
+            // Flush updates after the initial frame callback returns to avoid transparent or corrupted buffers.
+            QTimer::singleShot(25, w, [w] { w->update(); });
+            QTimer::singleShot(60, w, [w] { w->update(); });
+        }
+        return false;
+    }
+};
+
+class GlobalDialogWatchFilter : public QObject {
+public:
+    using QObject::QObject;
+protected:
+    bool eventFilter(QObject *obj, QEvent *ev) override {
+        if (ev->type() == QEvent::Show) {
+            if (auto *dlg = qobject_cast<QDialog *>(obj)) {
+                Theme::setupDialog(dlg);
+            }
+        }
+        return false;
+    }
+};
+} // namespace
+
+void Theme::setupDialog(QDialog *dialog) {
+    if (!dialog) return;
+
+    dialog->setAttribute(Qt::WA_OpaquePaintEvent, true);
+    dialog->setAttribute(Qt::WA_StyledBackground, true);
+    dialog->setAutoFillBackground(true);
+
+    QPalette pal = dialog->palette();
+    pal.setColor(QPalette::Window, Theme::Background);
+    pal.setColor(QPalette::WindowText, Theme::OnSurface);
+    pal.setColor(QPalette::Text, Theme::OnSurface);
+    dialog->setPalette(pal);
+
+    QWidget *p = dialog->parentWidget();
+    QScreen *targetScreen = nullptr;
+    if (p && p->window() && p->window()->windowHandle()) {
+        targetScreen = p->window()->windowHandle()->screen();
+    } else if (auto *active = QApplication::activeWindow()) {
+        if (active->windowHandle()) {
+            targetScreen = active->windowHandle()->screen();
+        }
+    }
+    if (targetScreen) {
+        dialog->winId();
+        if (dialog->windowHandle()) {
+            dialog->windowHandle()->setScreen(targetScreen);
+        }
+    }
+
+    static const char *kFilterProp = "_lz_dialog_filter_installed";
+    if (!dialog->property(kFilterProp).toBool()) {
+        dialog->setProperty(kFilterProp, true);
+        dialog->installEventFilter(new DialogEventFilter(dialog));
+    }
+}
+
 void Theme::apply(QApplication &app) {
     initFonts();
     app.setFont(bodyFont(10));
@@ -670,4 +763,5 @@ void Theme::apply(QApplication &app) {
     app.setWindowIcon(appIcon());
 
     app.setStyleSheet(globalStyleSheet());
+    app.installEventFilter(new GlobalDialogWatchFilter(&app));
 }

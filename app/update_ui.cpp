@@ -1,6 +1,7 @@
 #include "window.h"
 #include "update.h"
 #include "update_transaction.h"
+#include "theme.h"
 #include <QApplication>
 #include <QDialog>
 #include <QVBoxLayout>
@@ -19,7 +20,11 @@ void Window::setupUpdates(QVBoxLayout *layout) {
     auto *client = new UpdateClient(this);
     connect(client, &UpdateClient::available, banner, &QWidget::show);
     connect(banner, &QPushButton::clicked, this, [this, client] {
-        QDialog dialog(this); dialog.setWindowTitle("Atualização do Lazarus Share"); dialog.resize(500, 370);
+        QDialog dialog(this);
+        dialog.setWindowTitle("Atualização do Lazarus Share");
+        dialog.setObjectName("updateDialog");
+        Theme::setupDialog(&dialog);
+        dialog.resize(500, 370);
         auto *layout = new QVBoxLayout(&dialog);
         const auto release = client->release();
         layout->addWidget(new QLabel(QString("Versão atual: %1   ·   Nova versão: %2\nDownload: %3 MB")
