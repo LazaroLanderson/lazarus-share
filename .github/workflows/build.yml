@@ -75,11 +75,13 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: >-
-            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-pkgconf mingw-w64-x86_64-qt6-base mingw-w64-x86_64-qt6-websockets mingw-w64-x86_64-qt6-svg
-            mingw-w64-x86_64-gstreamer mingw-w64-x86_64-gst-plugins-base
-            mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad
+      - run: |
+          pacman -Syu --noconfirm
+          pacman -S --needed --noconfirm \
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
+            mingw-w64-x86_64-pkgconf mingw-w64-x86_64-qt6-base mingw-w64-x86_64-qt6-websockets mingw-w64-x86_64-qt6-svg \
+            mingw-w64-x86_64-gstreamer mingw-w64-x86_64-gst-plugins-base \
+            mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad \
             mingw-w64-x86_64-libnice mingw-w64-x86_64-python mingw-w64-x86_64-openssl
       - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
       - run: ctest --test-dir build -R "activation|protocol|profile|update|viewer|media-modules|media-encoder-creation" --output-on-failure

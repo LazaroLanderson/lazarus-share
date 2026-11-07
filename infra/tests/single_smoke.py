@@ -16,6 +16,7 @@ with tempfile.TemporaryDirectory(prefix='lazarus-single-smoke-') as directory:
     for name in ('compose.single.yml','nginx.single.conf.template','Dockerfile'):
         shutil.copy2(SOURCE/'infra'/name,infra/name)
     for name in ('service.py','requirements.txt','join.html'):shutil.copy2(SOURCE/'server'/name,root/'server'/name)
+    if (SOURCE/'bot').exists(): shutil.copytree(SOURCE/'bot', root/'bot', dirs_exist_ok=True)
     for name in ('signal','public'):
         certs=infra/'certs'/name;certs.mkdir(parents=True)
         subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.2','-keyout',str(certs/'privkey.pem'),'-out',str(certs/'fullchain.pem')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
