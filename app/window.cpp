@@ -27,6 +27,10 @@
 #include <QDialogButtonBox>
 #include <QPainter>
 #include <QSettings>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QInputDialog>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
 #include <QRegularExpression>
@@ -1037,6 +1041,11 @@ QWidget *Window::createRoomPage() {
     });
     ribLayout->addWidget(ribCopyBtn);
 
+    auto *ribDiscordBtn = new QPushButton("Anunciar no Discord", roomInviteBanner_);
+    ribDiscordBtn->setStyleSheet("QPushButton { background-color: #5865F2; color: #FFFFFF; font-weight: 700; border-radius: 6px; padding: 6px 14px; font-size: 11px; border: none; } QPushButton:hover { background-color: #4752C4; }");
+    connect(ribDiscordBtn, &QPushButton::clicked, this, &Window::announceDiscord);
+    ribLayout->addWidget(ribDiscordBtn);
+
     auto *closeBannerBtn = new QPushButton(roomInviteBanner_);
     closeBannerBtn->setIcon(Theme::icon("close", QColor(76, 69, 70), 14));
     closeBannerBtn->setFixedSize(26, 26);
@@ -1470,6 +1479,48 @@ QWidget *Window::createSettingsPage() {
     twoCol->addWidget(rightCol, 1);
     layout->addLayout(twoCol);
 
+    auto *discordCard = new QFrame(page);
+    discordCard->setObjectName("discordCard");
+    discordCard->setStyleSheet("QFrame#discordCard { background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE; }");
+    auto *dcLayout = new QVBoxLayout(discordCard);
+    dcLayout->setContentsMargins(16, 14, 16, 14);
+    dcLayout->setSpacing(8);
+
+    auto *dcTag = new QLabel("INTEGRAÇÃO DISCORD", discordCard);
+    dcTag->setFont(Theme::codeFont(8));
+    dcTag->setStyleSheet("background-color: #E0E3FF; color: #5865F2; font-weight: 700; padding: 2px 8px; border-radius: 4px; border: none;");
+    dcLayout->addWidget(dcTag, 0, Qt::AlignLeft);
+
+    auto *dcTitle = new QLabel("Webhook para Anúncio de Transmissões", discordCard);
+    dcTitle->setFont(Theme::headlineFont(11, QFont::Bold));
+    dcTitle->setStyleSheet("color: #000000; border: none;");
+    dcLayout->addWidget(dcTitle);
+
+    auto *dcDesc = new QLabel("Configure um Webhook do Discord para divulgar salas com 1 clique para os membros do seu servidor.", discordCard);
+    dcDesc->setFont(Theme::bodyFont(9));
+    dcDesc->setStyleSheet("color: #4C4546; border: none;");
+    dcDesc->setWordWrap(true);
+    dcLayout->addWidget(dcDesc);
+
+    auto *dcRow = new QHBoxLayout;
+    auto *dcInput = new QLineEdit(discordCard);
+    QSettings dcSettings("LazarusLabs", "LazarusShare");
+    dcInput->setText(dcSettings.value("discord/webhook").toString());
+    dcInput->setPlaceholderText("https://discord.com/api/webhooks/...");
+    dcInput->setStyleSheet("QLineEdit { background: #FFFFFF; border: 1px solid #E4E3D8; border-radius: 6px; padding: 6px 10px; font-size: 11px; }");
+    dcRow->addWidget(dcInput, 1);
+
+    auto *dcSaveBtn = new QPushButton("Salvar Webhook", discordCard);
+    dcSaveBtn->setStyleSheet("QPushButton { background-color: #5865F2; color: #FFFFFF; font-weight: 700; border-radius: 6px; padding: 6px 14px; font-size: 11px; border: none; } QPushButton:hover { background-color: #4752C4; }");
+    connect(dcSaveBtn, &QPushButton::clicked, this, [this, dcInput] {
+        QSettings s("LazarusLabs", "LazarusShare");
+        s.setValue("discord/webhook", dcInput->text().trimmed());
+        notice("Webhook do Discord salvo.");
+    });
+    dcRow->addWidget(dcSaveBtn);
+    dcLayout->addLayout(dcRow);
+    layout->addWidget(discordCard);
+
     auto *bottomDock = new QFrame(page);
     bottomDock->setStyleSheet("background-color: #F0EEE3; border-radius: 12px; border: 1px solid #EAE8DE;");
     auto *bdLayout = new QHBoxLayout(bottomDock);
@@ -1837,6 +1888,60 @@ void Window::create() {
     notice("Criando sala, sem compartilhar tela.");
     viewerState_="Conectando"; updatePresentation(); refreshAudio(); log("room_create"); openSocket();
     showPage(2);
+}
+void Window::announceDiscord() {
+    if (token_->text().trimmed().isEmpty()) {
+        notice("Nenhuma sala ativa para anunciar.");
+        return;
+    }
+    QSettings settings("LazarusLabs", "LazarusShare");
+    QString webhook = settings.value("discord/webhook").toString().trimmed();
+    if (webhook.isEmpty()) {
+        bool ok = false;
+        webhook = QInputDialog::getText(this, "Configurar Discord Webhook",
+            "Cole a URL do Webhook do Discord para anunciar suas salas:\n(No Discord: Configurações do Canal > Integrações > Webhooks > Criar Webhook)",
+            QLineEdit::Normal, "", &ok).trimmed();
+        if (!ok || webhook.isEmpty()) return;
+        settings.setValue("discord/webhook", webhook);
+    }
+
+    QUrl url(webhook);
+    if (!url.isValid() || (!url.scheme().startsWith("http"))) {
+        notice("URL do Webhook do Discord inválida.");
+        return;
+    }
+
+    auto *mgr = new QNetworkAccessManager(this);
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+    QString hostName = profile_.valid() ? profile_.nickname : "Anfitrião";
+    QString invite = token_->text();
+
+    QJsonObject embed{
+        {"title", "📺 Lazarus Share — Transmissão ao Vivo"},
+        {"description", QString("**%1** iniciou uma transmissão de tela no Lazarus Share!\n\nClique no link abaixo para assistir direto no aplicativo ou navegador:\n[🚀 Entrar na Transmissão](%2)").arg(hostName, invite)},
+        {"color", 64702},
+        {"footer", QJsonObject{{"text", "Lazarus Share • P2P WebRTC 60 FPS"}}}
+    };
+    QJsonObject payload{
+        {"username", "Lazarus Share"},
+        {"embeds", QJsonArray{embed}}
+    };
+
+    QByteArray data = QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    notice("Enviando anúncio para o Discord…");
+    QNetworkReply *reply = mgr->post(request, data);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, mgr] {
+        if (reply->error() == QNetworkReply::NoError) {
+            notice("Sala anunciada no Discord com sucesso!");
+        } else {
+            notice("Falha ao enviar webhook para o Discord: " + reply->errorString());
+        }
+        reply->deleteLater();
+        mgr->deleteLater();
+    });
 }
 void Window::join() {
     if (active_ || !profile_.valid()) return;

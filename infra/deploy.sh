@@ -41,6 +41,10 @@ path = Path('infra/.env')
 lines = path.read_text().splitlines() if path.exists() else []
 lines = [line for line in lines if not re.match(r'^\s*(?:export\s+)?SIGNAL_(HOST|IP|TLS_MODE)\s*=', line)]
 lines += ['SIGNAL_HOST=' + host, 'SIGNAL_IP=' + address, 'SIGNAL_TLS_MODE=' + tls_mode]
+discord_token = os.environ.get('DISCORD_BOT_TOKEN', '').strip()
+if discord_token:
+    lines = [line for line in lines if not re.match(r'^\s*(?:export\s+)?DISCORD_BOT_TOKEN\s*=', line)]
+    lines += ['DISCORD_BOT_TOKEN=' + discord_token]
 with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as output:
     output.write('\n'.join(lines) + '\n')
     temporary = output.name

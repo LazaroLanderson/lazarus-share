@@ -72,6 +72,13 @@ sys.exit(1 if fail else 0)
         self.assertIn('TURN_SECRET=preserve-private-value', env_file.read_text())
         self.assertNotIn('preserve-private-value', result.stdout + result.stderr)
 
+    def test_discord_bot_token_updates_env_when_set(self):
+        env_file = self.repo / 'infra/.env'
+        command = ['bash', str(SCRIPT), self.new, str(self.repo), 'signaling', 'salas.example.invalid', '0.0.0.0']
+        result = subprocess.run(command, env=self.env | {'DISCORD_BOT_TOKEN': 'test_token_123'}, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('DISCORD_BOT_TOKEN=test_token_123', env_file.read_text())
+
     def test_invalid_variable_does_not_change_env_or_containers(self):
         env_file = self.repo / 'infra/.env'
         original = env_file.read_text()

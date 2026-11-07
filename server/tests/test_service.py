@@ -284,5 +284,52 @@ class Rooms(unittest.IsolatedAsyncioTestCase):
             if m.type == WSMsgType.CLOSE:
                 self.assertEqual(m.data, 1008); break
 
+    async def test_coordinator_mode_allows_five_human_participants_and_skips_media(self):
+        coord = await self.socket()
+        await coord.send_json(dict(type="create", protocol=2, room=self.room, admin=self.admin,
+                                   challenge="a" * 32, requireApproval=False, coordinator=True,
+                                   profile=dict(nickname="DiscordBot", avatar=0)))
+        created = await self.receive(coord, "created")
+        coord_id = created['peer']
+        await self.state(coord)
+
+        # 5 human guests can join without being blocked by room_full
+        guests = []
+        for i in range(5):
+            ws = await self.socket()
+            await ws.send_json(dict(type="join", protocol=2, room=self.room, challenge="b" * 32,
+                                    profile=dict(nickname=f"User{i}", avatar=i)))
+            joined = await self.receive(ws, "joined")
+            guests.append((ws, joined['peer']))
+            await self.state(ws)
+
+        # 6th human guest gets room_full
+        sixth = await self.socket()
+        await sixth.send_json(dict(type="join", protocol=2, room=self.room, challenge="c" * 32,
+                                   profile=dict(nickname="Sixth", avatar=1)))
+        self.assertEqual((await self.receive(sixth, 'error'))['code'], 'room_full')
+
+        # Coordinator cannot broadcast
+        await coord.send_json(dict(type='share-request'))
+        self.assertEqual((await self.receive(coord, 'error'))['code'], 'share_busy')
+
+        # First guest starts broadcasting to the other 4 guests
+        broadcaster, b_id = guests[0]
+        receivers = guests[1:]
+        revision = await self.reserve(broadcaster, b_id)
+        await broadcaster.send_json(dict(type='share-confirm', revision=revision))
+        await self.state(broadcaster, sharing=True)
+
+        # The 4 receivers get ready, but the coordinator does NOT receive a ready message
+        for receiver, rid in receivers:
+            h = await self.receive(broadcaster, 'ready')
+            g = await self.receive(receiver, 'ready')
+            self.assertEqual(h['peer'], rid)
+            self.assertEqual(g['peer'], b_id)
+
+        # Coordinator received room-state with sharing=True, but never got ready
+        c_state = await self.state(coord, sharing=True)
+        self.assertEqual(c_state['broadcaster'], b_id)
+
 
 if __name__ == '__main__': unittest.main()

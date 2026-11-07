@@ -59,6 +59,7 @@ jobs:
           SIGNAL_TLS_MODE: ${{ vars.SIGNAL_TLS_MODE }}
           SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_KEY || secrets.VPS_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         run: |
           set -Eeuo pipefail
           [[ "$VPS_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
@@ -88,7 +89,11 @@ jobs:
           trap 'rm -f "$key" "$hosts"' EXIT
           python3 infra/prepare_ssh.py "$key"
           printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
+          remote_cmd="bash -s -- $GITHUB_SHA $VPS_DEPLOY_PATH $VPS_DEPLOY_MODE $SIGNAL_HOST $SIGNAL_IP $SIGNAL_TLS_MODE"
+          if [[ -n "${DISCORD_BOT_TOKEN:-}" ]]; then
+            remote_cmd="DISCORD_BOT_TOKEN='$DISCORD_BOT_TOKEN' $remote_cmd"
+          fi
           ssh -i "$key" -p "$VPS_PORT" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" \
             "$VPS_USER@$VPS_HOST" \
-            "bash -s -- $GITHUB_SHA $VPS_DEPLOY_PATH $VPS_DEPLOY_MODE $SIGNAL_HOST $SIGNAL_IP $SIGNAL_TLS_MODE" < infra/deploy.sh
+            "$remote_cmd" < infra/deploy.sh

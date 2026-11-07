@@ -69,3 +69,16 @@ services:
     volumes: ['./certs/public:/certs:ro']
     restart: unless-stopped
     logging: {driver: none}
+  bot:
+    build:
+      context: ../bot
+      dockerfile: Dockerfile
+    environment:
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      SIGNAL_URL: ws://signaling:8080/ws
+      WEB_JOIN_BASE_URL: https://${SIGNAL_HOST:-share.app.lazaruslabs.com.br}/join
+      APP_DOWNLOAD_URL: https://github.com/LazaroLanderson/lazarus-share/releases/latest
+    depends_on:
+      signaling:
+        condition: service_healthy
+    restart: unless-stopped

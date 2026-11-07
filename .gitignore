@@ -64,6 +64,7 @@ htmlcov/
 gstreamer-registry*.bin
 
 # Editor and operating-system files
+.agents/
 .vscode/
 .idea/
 *.swp

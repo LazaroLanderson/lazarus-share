@@ -90,6 +90,7 @@ private:
     void notice(const QString &message);
     void showPage(int index);
     void showComingSoon(const QString &feature = QString());
+    void announceDiscord();
     QWidget *createHeaderWidget();
     QWidget *createHomePage();
     QWidget *createPrepPage();

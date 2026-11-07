@@ -25,6 +25,7 @@ class Participant:
     approved: bool = True
     profile: dict = field(default_factory=dict)
     capabilities: list = field(default_factory=list)
+    coordinator: bool = False
 
 
 @dataclass
@@ -98,8 +99,8 @@ class Service:
     async def state(self, room):
         for pid, participant in room.participants.items():
             if not participant.approved: continue
-            roster = [dict(peer=i, profile=p.profile, approved=p.approved, owner=i == room.owner)
-                      for i, p in room.participants.items() if p.approved or pid == room.owner]
+            roster = [dict(peer=i, profile=p.profile, approved=p.approved, owner=i == room.owner, coordinator=p.coordinator)
+                      for i, p in room.participants.items() if (p.approved or pid == room.owner) and (not p.coordinator or pid == i or pid == room.owner)]
             await self.send(participant.ws, type="room-state", protocol=2, participants=roster,
                             broadcaster=room.broadcaster, revision=room.revision, sharing=room.sharing,
                             ownerOnline=room.participants[room.owner].ws is not None)
@@ -133,6 +134,10 @@ class Service:
     async def ready(self, room, receiver):
         sender = room.broadcaster
         if not room.sharing or receiver == sender: return
+        p_recv = room.participants.get(receiver)
+        if p_recv and p_recv.coordinator: return
+        p_send = room.participants.get(sender)
+        if p_send and p_send.coordinator: return
         pair = Pair()
         room.pairs[receiver] = pair
         for local, remote in ((sender, receiver), (receiver, sender)):
@@ -197,9 +202,10 @@ class Service:
                                 await self.send(ws, type="error", code="create_failed"); continue
                             policy = m.get("requireApproval", True)
                             if not isinstance(policy, bool): raise ValueError()
+                            coordinator = bool(m.get("coordinator", False))
                             key, pid = candidate, secrets.token_hex(8)
                             room = Room(policy, hashlib.sha256(admin.encode()).digest(), pid)
-                            room.participants[pid] = Participant(ws, challenge, profile=profile, capabilities=caps)
+                            room.participants[pid] = Participant(ws, challenge, profile=profile, capabilities=caps, coordinator=coordinator)
                             self.rooms[key] = room
                             async with room.lock:
                                 await self.send(ws, type="created", protocol=2, peer=pid, requireApproval=policy)
@@ -215,7 +221,8 @@ class Service:
                                     if not isinstance(admin, str) or owner.ws is not None or not hmac.compare_digest(room.admin_hash, hashlib.sha256(admin.encode()).digest()):
                                         await self.send(ws, type="error", code="resume_failed"); continue
                                     key, pid = candidate, room.owner
-                                    room.participants[pid] = Participant(ws, challenge, profile=profile, capabilities=caps)
+                                    is_coord = room.participants[pid].coordinator if pid in room.participants else bool(m.get("coordinator", False))
+                                    room.participants[pid] = Participant(ws, challenge, profile=profile, capabilities=caps, coordinator=is_coord)
                                     room.expiry = None
                                     await self.send(ws, type="created", protocol=2, peer=pid, requireApproval=room.require_approval)
                                     for i, p in room.participants.items():
@@ -225,7 +232,7 @@ class Service:
                                 else:
                                     if owner.ws is None or len(room.participants) >= 17:
                                         await self.send(ws, type="error", code="room_unavailable"); continue
-                                    if not room.require_approval and sum(p.approved for p in room.participants.values()) >= 5:
+                                    if not room.require_approval and sum(p.approved for p in room.participants.values() if not p.coordinator) >= 5:
                                         await self.send(ws, type="error", code="room_full"); continue
                                     key, pid = candidate, secrets.token_hex(8)
                                     approved = not room.require_approval
@@ -256,14 +263,14 @@ class Service:
                                 self.close_socket(guest.ws)
                                 await self.state(room)
                             elif not guest.approved:
-                                if sum(p.approved for p in room.participants.values()) >= 5:
+                                if sum(p.approved for p in room.participants.values() if not p.coordinator) >= 5:
                                     await self.send(ws, type="error", code="room_full"); continue
                                 guest.approved = True
                                 await self.state(room)
                                 if room.sharing: await self.ready(room, target)
                         elif not p.approved: raise ValueError()
                         elif kind == "share-request":
-                            if room.broadcaster:
+                            if p.coordinator or room.broadcaster:
                                 await self.send(ws, type="error", code="share_busy"); continue
                             room.broadcaster = pid
                             room.revision += 1
